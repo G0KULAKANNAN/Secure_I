@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  Network,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ const navItems = [
   { name: 'Findings', path: '/findings', icon: FileSearch },
   { name: 'Migration Guide', path: '/migration', icon: GitPullRequest },
   { name: 'Hybrid Lab', path: '/hybrid-lab', icon: Layers },
+  { name: 'Network Lab', path: '/network-lab', icon: Network },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {

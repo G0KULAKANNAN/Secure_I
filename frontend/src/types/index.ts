@@ -325,3 +325,75 @@ export interface HybridTestResponse {
   status: string;
   verification_run: HybridVerificationRun;
 }
+
+// ==========================================
+// Stage 3: Network Compatibility Lab Types
+// ==========================================
+
+export type NetworkTestMode = 'simulation' | 'local_loopback' | 'authorised_endpoint';
+export type NetworkTestProfile = 'standard_mtu' | 'fragmentation_sensitive' | 'large_handshake_probe' | 'middlebox_probe';
+export type DiagnosticClassification = 'PASS' | 'FAIL' | 'INCONCLUSIVE' | 'SIMULATED' | 'NOT_SUPPORTED';
+
+export interface NetworkProfile {
+  id: string;
+  name: string;
+  target_host: string;
+  target_port: number;
+  environment: string;
+  test_profile: NetworkTestProfile;
+  test_mode: NetworkTestMode;
+  expected_mtu: number;
+  connection_timeout: number;
+  handshake_timeout: number;
+  max_retries: number;
+  is_allowlisted: boolean;
+  authorized_by_operator: boolean;
+  operator_notes?: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NetworkProfileListResponse {
+  status: string;
+  profiles: NetworkProfile[];
+  total: number;
+}
+
+export interface NetworkVerificationResult {
+  id: string;
+  profile_id: string;
+  job_id?: string | null;
+  test_mode: NetworkTestMode;
+  target_endpoint: string;
+  address_family: string;
+  configured_mtu?: number | null;
+  tls_version?: string | null;
+  negotiated_group?: string | null;
+  handshake_success: boolean;
+  diagnostic_classification: DiagnosticClassification;
+  diagnostic_finding: string;
+  observed_error?: string | null;
+  duration_ms: number;
+  retry_count: number;
+  packet_size_estimate_bytes?: number | null;
+  evidence_level: 'connection_level' | 'measured' | 'simulated';
+  evidence_details: Record<string, any>;
+  remediation_recommendations: string[];
+  confidence: string;
+  is_simulated: boolean;
+  simulation_label: string;
+  created_at: string;
+}
+
+export interface NetworkRunResponse {
+  status: string;
+  message: string;
+  result: NetworkVerificationResult;
+}
+
+export interface NetworkResultListResponse {
+  status: string;
+  results: NetworkVerificationResult[];
+  total: number;
+}

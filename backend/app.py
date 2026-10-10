@@ -27,6 +27,7 @@ from quantumshield.api.migration import migration_bp
 from quantumshield.api.reports import reports_bp
 from quantumshield.api.hybrid import hybrid_bp
 from quantumshield.api.audit import audit_bp
+from quantumshield.api.network import network_bp
 
 
 def create_app(config_object=None, enable_workers=True):
@@ -66,6 +67,7 @@ def create_app(config_object=None, enable_workers=True):
     app.register_blueprint(reports_bp)
     app.register_blueprint(hybrid_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(network_bp)
 
     # Global Exception Handlers
     @app.errorhandler(QuantumShieldError)

@@ -258,6 +258,61 @@ def init_db(db_path: Union[str, Path]) -> None:
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hybrid_runs_profile ON hybrid_verification_runs (profile_id);")
 
+        # -------------------------------------------------------------
+        # Stage 3: Network MTU & Middlebox Verification Tables
+        # -------------------------------------------------------------
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS network_verification_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                target_host TEXT NOT NULL DEFAULT '127.0.0.1',
+                target_port INTEGER NOT NULL DEFAULT 443,
+                environment TEXT NOT NULL DEFAULT 'local_lab',
+                test_profile TEXT NOT NULL DEFAULT 'standard_mtu',
+                test_mode TEXT NOT NULL DEFAULT 'simulation',
+                expected_mtu INTEGER NOT NULL DEFAULT 1500,
+                connection_timeout REAL NOT NULL DEFAULT 5.0,
+                handshake_timeout REAL NOT NULL DEFAULT 5.0,
+                max_retries INTEGER NOT NULL DEFAULT 2,
+                is_allowlisted INTEGER NOT NULL DEFAULT 0,
+                authorized_by_operator INTEGER NOT NULL DEFAULT 0,
+                operator_notes TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_net_profiles_env ON network_verification_profiles (environment);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS network_verification_results (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                job_id TEXT,
+                test_mode TEXT NOT NULL,
+                target_endpoint TEXT NOT NULL,
+                address_family TEXT NOT NULL DEFAULT 'IPv4',
+                configured_mtu INTEGER,
+                tls_version TEXT,
+                negotiated_group TEXT,
+                handshake_success INTEGER NOT NULL DEFAULT 1,
+                diagnostic_classification TEXT NOT NULL,
+                diagnostic_finding TEXT NOT NULL,
+                observed_error TEXT,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                packet_size_estimate_bytes INTEGER,
+                evidence_level TEXT NOT NULL DEFAULT 'connection_level',
+                evidence_details_json TEXT,
+                remediation_recommendations_json TEXT,
+                confidence TEXT NOT NULL DEFAULT 'high',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (profile_id) REFERENCES network_verification_profiles(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_net_results_profile ON network_verification_results (profile_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_net_results_class ON network_verification_results (diagnostic_classification);")
+
         # Seed default crypto capabilities if empty
         _seed_default_capabilities(conn)
 
