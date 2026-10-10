@@ -2,26 +2,19 @@ import React, { useEffect, useState } from 'react';
 import {
   FileCheck2,
   AlertOctagon,
-  ShieldAlert,
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
-  Play,
   RotateCcw,
   RefreshCw,
-  Sliders,
   Layers,
-  ArrowRight,
   Info,
-  Lock,
   UserCheck,
   Calendar,
   FileText,
 } from 'lucide-react';
 import {
   fetchPolicies,
-  createPolicy,
   fetchDependencies,
   discoverDependencies,
   updateDependency,
@@ -46,7 +39,7 @@ const POLICY_BADGE_STYLES: Record<string, string> = {
   MIGRATION_REQUIRED: 'bg-amber-950 text-amber-300 border-amber-600',
   DEPRECATED: 'bg-orange-950 text-orange-300 border-orange-600',
   PROHIBITED_BY_CONFIGURED_POLICY: 'bg-rose-950 text-rose-300 border-rose-600',
-  NEEDS_REVIEW: 'bg-slate-800 text-slate-300 border-slate-600',
+  NEEDS_REVIEW: 'bg-navy-800 text-gray-300 border-navy-700',
 };
 
 export const RetirementCenter: React.FC = () => {
@@ -235,16 +228,16 @@ export const RetirementCenter: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 max-w-7xl mx-auto pb-12">
       {/* Header */}
       <div>
         <div className="flex items-center space-x-3 mb-2">
-          <div className="p-2 bg-rose-950/60 text-rose-400 rounded-lg border border-rose-700/50">
+          <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/30 shadow-md shadow-rose-500/10">
             <AlertOctagon className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Classical Cryptography Decommissioning</h1>
-            <p className="text-slate-400 text-sm">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">Classical Cryptography Decommissioning</h1>
+            <p className="text-gray-400 text-sm">
               Stage 5: Primitive-Specific Inventory, Policy Governance, 10-Point Readiness Gates, and Safe Algorithm Retirement
             </p>
           </div>
@@ -252,8 +245,8 @@ export const RetirementCenter: React.FC = () => {
       </div>
 
       {/* Safety Notice */}
-      <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-700 text-slate-300 text-sm flex items-start space-x-3 shadow-sm">
-        <Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+      <div className="p-4 rounded-2xl bg-navy-900/90 border border-navy-750 text-gray-300 text-xs md:text-sm flex items-start space-x-3 shadow-md">
+        <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
         <div>
           <span className="font-semibold text-white">Controlled Retirement Standard: </span>
           Classical primitives are retired per cryptographic category (key exchange vs digital signature vs hashing). All transitions require formal human sign-off and preserve an automated rollback playbook in SQLite.
@@ -262,58 +255,59 @@ export const RetirementCenter: React.FC = () => {
 
       {/* Action alerts */}
       {actionMessage && (
-        <div className="p-4 rounded-lg bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-sm flex items-center space-x-2">
+        <div className="p-4 rounded-2xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-200 text-sm flex items-center space-x-2 shadow-md">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span>{actionMessage}</span>
         </div>
       )}
       {actionError && (
-        <div className="p-4 rounded-lg bg-rose-950/60 border border-rose-500/50 text-rose-200 text-sm flex items-center space-x-2">
+        <div className="p-4 rounded-2xl bg-rose-950/70 border border-rose-500/50 text-rose-200 text-sm flex items-center space-x-2 shadow-md">
           <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
           <span>{actionError}</span>
         </div>
       )}
 
       {/* Section 1: Algorithmic Policy Classification Matrix */}
-      <div className="p-6 rounded-xl bg-slate-800/90 border border-slate-700/70 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-            <ShieldCheck className="w-5 h-5 text-indigo-400" />
+      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-navy-850 to-navy-900 border border-navy-750/90 shadow-xl space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-navy-750/70">
+          <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+            <ShieldCheck className="w-5 h-5 text-cyan-400" />
             <span>Cryptographic Policy Classifications ({policies.length})</span>
           </h2>
+          <span className="text-xs text-gray-400 font-mono">NIST SP 800-131A & FIPS Standards</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {policies.map((pol) => (
             <div
               key={pol.id}
-              className="p-3.5 rounded-lg bg-slate-900/70 border border-slate-700/60 flex flex-col justify-between"
+              className="p-4 rounded-2xl bg-navy-900/90 border border-navy-750/80 flex flex-col justify-between shadow-sm hover:border-navy-700 transition"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-xs font-bold text-white">{pol.algorithm}</span>
+                  <span className="font-mono text-xs font-bold text-white tracking-wide">{pol.algorithm}</span>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${
-                      POLICY_BADGE_STYLES[pol.status] || 'bg-slate-800 text-slate-300'
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider font-mono ${
+                      POLICY_BADGE_STYLES[pol.status] || 'bg-navy-800 text-gray-300'
                     }`}
                   >
                     {pol.status.replace(/_/g, ' ')}
                   </span>
                 </div>
-                <div className="text-xs text-indigo-300 font-medium mb-1 capitalize">
+                <div className="text-xs text-cyan-300 font-semibold mb-1 capitalize">
                   {pol.primitive_category.replace('_', ' ')}
                 </div>
-                <p className="text-xs text-slate-300 mb-2">{pol.name}</p>
+                <p className="text-xs text-gray-300 mb-2 font-medium">{pol.name}</p>
                 {pol.conditions && (
-                  <p className="text-[11px] text-slate-400 border-t border-slate-800 pt-1.5 mb-1">
-                    <span className="font-medium text-slate-300">Policy: </span>
+                  <p className="text-[11px] text-gray-400 border-t border-navy-800 pt-2 mb-1">
+                    <span className="font-semibold text-gray-300">Policy: </span>
                     {pol.conditions}
                   </p>
                 )}
               </div>
               {pol.enforcement_deadline && (
-                <div className="text-[10px] text-amber-300/80 flex items-center space-x-1 mt-2">
-                  <Calendar className="w-3 h-3" />
+                <div className="text-[10px] text-amber-300/90 flex items-center space-x-1.5 mt-2.5 font-mono">
+                  <Calendar className="w-3 h-3 text-amber-400" />
                   <span>Deadline: {pol.enforcement_deadline.split('T')[0]}</span>
                 </div>
               )}
@@ -323,53 +317,53 @@ export const RetirementCenter: React.FC = () => {
       </div>
 
       {/* Section 2: Cryptographic Dependency Inventory */}
-      <div className="p-6 rounded-xl bg-slate-800/90 border border-slate-700/70 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-navy-850 to-navy-900 border border-navy-750/90 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-navy-750/70">
           <div>
-            <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-              <Layers className="w-5 h-5 text-indigo-400" />
+            <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+              <Layers className="w-5 h-5 text-cyan-400" />
               <span>Cryptographic Dependencies Inventory ({dependencies.length})</span>
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-gray-400">
               Services mapped to current classical primitives and designated quantum-safe replacements.
             </p>
           </div>
           <button
             onClick={handleSyncDependencies}
             disabled={submitting}
-            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold rounded-lg flex items-center space-x-1.5 disabled:opacity-50 self-start sm:self-auto"
+            className="px-3.5 py-2 bg-navy-750 hover:bg-navy-700 text-white text-xs font-semibold rounded-xl flex items-center space-x-1.5 disabled:opacity-50 transition shadow-sm self-start sm:self-auto"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+            <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
             <span>Discover / Resync</span>
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-900/80 text-xs text-slate-400 uppercase tracking-wider">
+        <div className="overflow-x-auto rounded-2xl border border-navy-750">
+          <table className="w-full text-left text-sm text-gray-300">
+            <thead className="bg-navy-950 text-xs text-gray-400 uppercase tracking-wider font-mono">
               <tr>
-                <th className="px-4 py-3 rounded-l-lg">Service / System</th>
+                <th className="px-4 py-3">Service / System</th>
                 <th className="px-4 py-3">Primitive</th>
                 <th className="px-4 py-3">Current Classical</th>
                 <th className="px-4 py-3">PQC Target</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 rounded-r-lg">Actions</th>
+                <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/50">
+            <tbody className="divide-y divide-navy-750/60 bg-navy-900/60 font-mono text-xs">
               {dependencies.map((dep) => (
-                <tr key={dep.id} className="hover:bg-slate-750/50">
-                  <td className="px-4 py-3 font-semibold text-white">{dep.service_name}</td>
-                  <td className="px-4 py-3 text-xs capitalize text-slate-400">
+                <tr key={dep.id} className="hover:bg-navy-800/50 transition-colors">
+                  <td className="px-4 py-3 font-semibold text-white font-sans">{dep.service_name}</td>
+                  <td className="px-4 py-3 text-xs capitalize text-gray-400 font-sans">
                     {dep.primitive_category.replace('_', ' ')}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-rose-300">{dep.current_algorithm}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-emerald-300">{dep.target_algorithm}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-rose-300 font-bold">{dep.current_algorithm}</td>
+                  <td className="px-4 py-3 text-emerald-300 font-bold">{dep.target_algorithm}</td>
+                  <td className="px-4 py-3 font-sans">
                     <span
-                      className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${
+                      className={`px-2.5 py-0.5 rounded text-xs font-semibold uppercase ${
                         dep.status === 'decommissioned'
-                          ? 'bg-slate-800 text-slate-400'
+                          ? 'bg-navy-800 text-gray-400 border border-navy-700'
                           : dep.status === 'migrating'
                           ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
                           : 'bg-amber-950 text-amber-300 border border-amber-700'
@@ -378,12 +372,12 @@ export const RetirementCenter: React.FC = () => {
                       {dep.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center space-x-1.5">
+                  <td className="px-4 py-3 font-sans">
+                    <div className="flex items-center space-x-2">
                       {dep.status === 'active' && (
                         <button
                           onClick={() => handleToggleDepStatus(dep, 'migrating')}
-                          className="px-2 py-1 bg-cyan-950 hover:bg-cyan-900 text-cyan-300 text-xs rounded border border-cyan-700"
+                          className="px-2.5 py-1 bg-cyan-950 hover:bg-cyan-900 text-cyan-300 text-xs rounded-lg border border-cyan-700 font-medium transition"
                         >
                           Mark Migrating
                         </button>
@@ -391,13 +385,13 @@ export const RetirementCenter: React.FC = () => {
                       {dep.status === 'migrating' && (
                         <button
                           onClick={() => handleToggleDepStatus(dep, 'active')}
-                          className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded"
+                          className="px-2.5 py-1 bg-navy-750 hover:bg-navy-700 text-gray-200 text-xs rounded-lg font-medium transition"
                         >
                           Revert Active
                         </button>
                       )}
                       {dep.status === 'decommissioned' && (
-                        <span className="text-xs text-slate-400 italic">Retired</span>
+                        <span className="text-xs text-gray-400 italic">Retired</span>
                       )}
                     </div>
                   </td>
@@ -409,43 +403,43 @@ export const RetirementCenter: React.FC = () => {
       </div>
 
       {/* Section 3: Decommissioning Plans & Execution Control */}
-      <div className="p-6 rounded-xl bg-slate-800/90 border border-slate-700/70 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-700/60 pb-4">
+      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-navy-850 to-navy-900 border border-navy-750/90 shadow-xl space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-navy-750/80 pb-6">
           <div>
-            <div className="flex items-center space-x-3 mb-1">
-              <h2 className="text-xl font-bold text-white">
+            <div className="flex items-center space-x-3 mb-1.5">
+              <h2 className="text-xl md:text-2xl font-extrabold text-white">
                 {selectedPlan ? selectedPlan.name : 'No Decommissioning Plan Selected'}
               </h2>
               {selectedPlan && (
                 <span
-                  className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                     selectedPlan.state === 'COMPLETED'
                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-600'
                       : selectedPlan.state === 'ROLLED_BACK'
                       ? 'bg-rose-950 text-rose-300 border border-rose-600'
                       : selectedPlan.state === 'APPROVED'
-                      ? 'bg-indigo-950 text-indigo-300 border border-indigo-600'
-                      : 'bg-slate-700 text-slate-200'
+                      ? 'bg-cyan-950 text-cyan-300 border border-cyan-600'
+                      : 'bg-navy-800 text-gray-300 border border-navy-700'
                   }`}
                 >
                   {selectedPlan.state}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-400">
-              Target Primitive: <span className="font-mono text-slate-200">{selectedPlan?.target_primitive}</span> | Affected Services:{' '}
-              <span className="text-slate-200">{selectedPlan?.affected_services.join(', ')}</span>
+            <p className="text-xs md:text-sm text-gray-400">
+              Target Primitive: <span className="font-mono text-white font-bold">{selectedPlan?.target_primitive}</span> | Affected Services:{' '}
+              <span className="text-cyan-300">{selectedPlan?.affected_services.join(', ')}</span>
             </p>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <select
               value={selectedPlan?.id || ''}
               onChange={(e) => {
                 const found = plans.find((p) => p.id === e.target.value);
                 if (found) handleSelectPlan(found);
               }}
-              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+              className="px-3.5 py-2 bg-navy-950 border border-navy-750 rounded-xl text-xs md:text-sm text-gray-200 focus:outline-none focus:border-cyan-500 shadow-sm"
             >
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -456,16 +450,16 @@ export const RetirementCenter: React.FC = () => {
             <button
               onClick={handleAssessReadiness}
               disabled={!selectedPlan || submitting}
-              className="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg flex items-center space-x-1.5 disabled:opacity-50"
+              className="px-4 py-2 bg-navy-750 hover:bg-navy-700 text-white text-xs md:text-sm font-semibold rounded-xl flex items-center space-x-1.5 disabled:opacity-50 transition shadow-sm"
             >
-              <FileCheck2 className="w-4 h-4 text-indigo-400" />
+              <FileCheck2 className="w-4 h-4 text-cyan-400" />
               <span>Assess 10 Gates</span>
             </button>
             {selectedPlan?.state === 'READY_FOR_REVIEW' && (
               <button
                 onClick={handleApprovePlan}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg flex items-center space-x-2 disabled:opacity-50"
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-navy-950 text-xs md:text-sm font-bold rounded-xl flex items-center space-x-2 disabled:opacity-50 transition shadow-md shadow-cyan-500/20"
               >
                 <UserCheck className="w-4 h-4" />
                 <span>CISO Sign-off</span>
@@ -475,7 +469,7 @@ export const RetirementCenter: React.FC = () => {
               <button
                 onClick={handleExecuteDecommissioning}
                 disabled={submitting}
-                className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-sm font-medium rounded-lg flex items-center space-x-2 disabled:opacity-50"
+                className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white text-xs md:text-sm font-bold rounded-xl flex items-center space-x-2 disabled:opacity-50 transition shadow-md shadow-rose-500/20"
               >
                 <AlertOctagon className="w-4 h-4" />
                 <span>Execute Retirement</span>
@@ -485,7 +479,7 @@ export const RetirementCenter: React.FC = () => {
               <button
                 onClick={handleRollback}
                 disabled={submitting}
-                className="px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center space-x-2 disabled:opacity-50"
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white text-xs md:text-sm font-bold rounded-xl flex items-center space-x-2 disabled:opacity-50 transition shadow-md shadow-amber-500/20"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Rollback Retirement</span>
@@ -496,14 +490,14 @@ export const RetirementCenter: React.FC = () => {
 
         {/* 10-Point Readiness Gate Matrix */}
         {assessment && (
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center space-x-2">
-                <ShieldCheck className="w-4 h-4 text-indigo-400" />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-cyan-400" />
                 <span>10-Point Decommissioning Readiness Matrix</span>
               </h3>
               <span
-                className={`px-2.5 py-0.5 rounded text-xs font-bold ${
+                className={`px-3 py-1 rounded-full text-xs font-bold font-mono ${
                   assessment.all_technical_passed
                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-600'
                     : 'bg-rose-950 text-rose-300 border border-rose-600'
@@ -513,31 +507,31 @@ export const RetirementCenter: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
               {assessment.gates.map((g) => (
                 <div
                   key={g.gate_id}
-                  className="p-3 rounded-lg bg-slate-900/80 border border-slate-700/60 flex flex-col justify-between"
+                  className="p-3.5 rounded-xl bg-navy-900/90 border border-navy-750/80 flex flex-col justify-between"
                 >
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-semibold text-white">{g.title}</span>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-white">{g.title}</span>
                       <span
                         className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
                           g.status === 'PASS'
-                            ? 'bg-emerald-900/70 text-emerald-300'
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
                             : g.status === 'FAIL'
-                            ? 'bg-rose-900/70 text-rose-300'
-                            : 'bg-amber-900/70 text-amber-300'
+                            ? 'bg-rose-950 text-rose-300 border border-rose-700'
+                            : 'bg-amber-950 text-amber-300 border border-amber-700'
                         }`}
                       >
                         {g.status}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-tight">{g.message}</p>
+                    <p className="text-[11px] text-gray-400 leading-tight">{g.message}</p>
                   </div>
                   {g.recommendation && (
-                    <p className="text-[10px] text-amber-300/80 italic mt-1 border-t border-slate-800 pt-1">
+                    <p className="text-[10px] text-amber-300/90 italic mt-2 border-t border-navy-800 pt-1">
                       {g.recommendation}
                     </p>
                   )}
@@ -549,28 +543,28 @@ export const RetirementCenter: React.FC = () => {
       </div>
 
       {/* Section 4: Create Decommissioning Plan Form */}
-      <div className="p-6 rounded-xl bg-slate-800/90 border border-slate-700/70">
-        <h2 className="text-lg font-semibold text-white mb-3 flex items-center space-x-2">
-          <FileText className="w-5 h-5 text-indigo-400" />
+      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-navy-850 to-navy-900 border border-navy-750/90 shadow-xl space-y-4">
+        <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+          <FileText className="w-5 h-5 text-cyan-400" />
           <span>Initialize Decommissioning Plan</span>
         </h2>
         <form onSubmit={handleCreatePlan} className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Plan Name</label>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Plan Name</label>
             <input
               type="text"
               value={planName}
               onChange={(e) => setPlanName(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3.5 py-2.5 bg-navy-950 border border-navy-750 rounded-xl text-sm text-gray-100 focus:outline-none focus:border-cyan-500 shadow-sm"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Target Classical Primitive</label>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Target Classical Primitive</label>
             <select
               value={targetPrimitive}
               onChange={(e) => setTargetPrimitive(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3.5 py-2.5 bg-navy-950 border border-navy-750 rounded-xl text-sm text-gray-100 focus:outline-none focus:border-cyan-500 shadow-sm"
             >
               <option value="RSA-2048">RSA-2048 (Key Exchange / Signature)</option>
               <option value="Diffie-Hellman">Diffie-Hellman (Classical Key Exchange)</option>
@@ -581,33 +575,33 @@ export const RetirementCenter: React.FC = () => {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Affected Services (comma separated)</label>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Affected Services (comma separated)</label>
             <input
               type="text"
               value={affectedServices}
               onChange={(e) => setAffectedServices(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3.5 py-2.5 bg-navy-950 border border-navy-750 rounded-xl text-sm text-gray-100 focus:outline-none focus:border-cyan-500 shadow-sm"
             />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-300 mb-1">Emergency Rollback Instructions</label>
+            <label className="block text-xs font-semibold text-gray-300 mb-1">Emergency Rollback Instructions</label>
             <input
               type="text"
               value={rollbackInstructions}
               onChange={(e) => setRollbackInstructions(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3.5 py-2.5 bg-navy-950 border border-navy-750 rounded-xl text-sm text-gray-100 focus:outline-none focus:border-cyan-500 shadow-sm"
             />
           </div>
           <div className="flex items-end">
             <button
               type="submit"
               disabled={submitting}
-              className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg flex items-center justify-center space-x-2 disabled:opacity-50"
+              className="w-full px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-navy-950 text-sm font-bold rounded-xl flex items-center justify-center space-x-2 disabled:opacity-50 transition shadow-lg shadow-cyan-500/20"
             >
               <FileCheck2 className="w-4 h-4" />
-              <span>Create Decommissioning Plan</span>
+              <span>Create Plan</span>
             </button>
           </div>
         </form>

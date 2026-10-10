@@ -116,7 +116,7 @@ class RolloutEngine:
             "title": "Network MTU & Middlebox Verification",
             "status": "PASS" if net_passed else "FAIL",
             "message": "MTU fragmentation and middlebox compatibility verified." if net_passed else "Network compatibility tests have not passed or are missing.",
-            "recommendation": "Run Mode 1 or Mode 2 network verification in the Network Lab." if not net_passed else None,
+            "recommendation": "Verify MTU fragmentation baseline and path compatibility." if not net_passed else None,
         })
         if not net_passed:
             blockers.append("Stage 3 network MTU verification has not passed.")

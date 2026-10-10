@@ -8,7 +8,6 @@ import { Findings } from './pages/Findings';
 import { RiskAssessment } from './pages/RiskAssessment';
 import { Migration } from './pages/Migration';
 import { HybridLab } from './pages/HybridLab';
-import { NetworkLab } from './pages/NetworkLab';
 import { RolloutCenter } from './pages/RolloutCenter';
 import { RetirementCenter } from './pages/RetirementCenter';
 import { Reports } from './pages/Reports';
@@ -29,7 +28,6 @@ export const App: React.FC = () => {
           <Route path="risk" element={<RiskAssessment />} />
           <Route path="migration" element={<Migration />} />
           <Route path="hybrid-lab" element={<HybridLab />} />
-          <Route path="network-lab" element={<NetworkLab />} />
           <Route path="rollout-center" element={<RolloutCenter />} />
           <Route path="retirement-center" element={<RetirementCenter />} />
           <Route path="reports" element={<Reports />} />
