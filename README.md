@@ -1,8 +1,8 @@
 # QuantumShield
 
-**Quantum-Vulnerable Cryptography Discovery and PQC Migration Prioritisation Platform**
+**Automation-First Cryptographic Exposure Discovery and PQC Migration Prioritisation Platform**
 
-QuantumShield is a cybersecurity web application built to help organizations discover potentially quantum-vulnerable cryptographic mechanisms (such as RSA, ECC, and Diffie-Hellman), collect traceable evidence, evaluate risk using explainable mathematical formulas, and prioritize migration to official NIST Post-Quantum Cryptography (PQC) standards (such as ML-KEM, ML-DSA, and SLH-DSA).
+QuantumShield is an automation-first cybersecurity platform built to help organizations discover potentially quantum-vulnerable cryptographic mechanisms (such as RSA, ECC, and Diffie-Hellman), collect traceable evidence, evaluate risk using explainable mathematical formulas, and prioritize migration to official NIST Post-Quantum Cryptography (PQC) standards (such as ML-KEM, ML-DSA, and SLH-DSA).
 
 > [!IMPORTANT]
 > **Quantum Vulnerability & Risk Disclaimer**:
@@ -18,7 +18,7 @@ QuantumShield follows a modular, decoupled cybersecurity application architectur
 
 ```
 quantumshield/
-├── backend/                    # Python Flask Modular REST API
+├── backend/                    # Python Flask Modular REST API & Automation Engine
 │   ├── app.py                  # Application factory (create_app)
 │   ├── config.py               # Central configuration (dev, test, prod)
 │   ├── requirements.txt        # Pinned Python dependencies
@@ -26,23 +26,28 @@ quantumshield/
 │   │   ├── extensions.py       # CORS & Database extensions
 │   │   ├── api/                # Versioned REST API endpoints (/api/v1/)
 │   │   │   ├── health.py       # Health check & version metadata
-│   │   │   └── assets.py       # Asset Inventory CRUD, search & filter API
+│   │   │   ├── assets.py       # Asset Inventory CRUD, search & filter API
+│   │   │   └── jobs.py         # Persistent scan job lifecycle & worker queue API
 │   │   ├── core/               # Constants, exceptions & validation
 │   │   ├── models/             # Domain data models
-│   │   │   └── asset.py        # Asset data model and validation rules
+│   │   │   ├── asset.py        # Asset data model and validation rules
+│   │   │   └── job.py          # ScanJob data model and status state machine
 │   │   ├── storage/            # SQLite repository layer
 │   │   │   ├── database.py     # SQLite connection & idempotent schema init
-│   │   │   └── repositories.py # Parameterised SQL AssetRepository
-│   │   ├── services/           # Application service layer
-│   │   ├── scanner/            # X.509, Source & TLS scanner engines (Stages 3-5)
-│   │   ├── risk/               # Explainable risk calculation engine (Stage 7)
-│   │   ├── migration/          # NIST PQC recommendation & planner (Stages 8-9)
-│   │   └── reports/            # Audit & CSV/JSON report generator (Stage 10)
+│   │   │   ├── repositories.py # Parameterised SQL AssetRepository
+│   │   │   └── job_repository.py# Parameterised SQL JobRepository & queue manager
+│   │   ├── services/           # Background workers & automation services
+│   │   │   └── job_worker.py   # Thread-safe BackgroundJobManager & worker pool
+│   │   ├── scanner/            # X.509, Source & TLS scanner engines (Milestone 2)
+│   │   ├── risk/               # Explainable risk calculation engine
+│   │   ├── migration/          # NIST PQC recommendation & planner
+│   │   └── reports/            # Audit & CSV/JSON report generator
 │   └── tests/                  # Automated pytest suite
 │       ├── conftest.py
 │       ├── test_health.py
 │       ├── test_database.py
-│       └── test_assets.py
+│       ├── test_assets.py
+│       └── test_jobs.py
 │
 ├── frontend/                   # React + TypeScript + Vite + Tailwind CSS
 │   ├── package.json            # Frontend dependencies
@@ -51,7 +56,7 @@ quantumshield/
 │   └── src/
 │       ├── main.tsx            # Application DOM root
 │       ├── App.tsx             # React-Router setup for all 8 views
-│       ├── api/                # Typed API clients (health, assets)
+│       ├── api/                # Typed API clients (health, assets, jobs)
 │       ├── components/         # Layout & common UI components
 │       └── pages/              # Overview, Assets, Scanner, Findings, etc.
 │
@@ -66,55 +71,51 @@ quantumshield/
 
 ---
 
-## Technology Stack
+## Persistent Job Queue & Worker Architecture
 
-- **Frontend**:
-  - React 18, TypeScript, Vite
-  - Tailwind CSS (Deep midnight navy `#0a0e17` theme with electric cyan and violet accents)
-  - Lucide Icons
-  - Chart.js (Dashboard visualizations)
-  - React Router DOM (Client-side routing)
-- **Backend**:
-  - Python 3.11+ (Flask Application Factory)
-  - SQLite with `PRAGMA foreign_keys = ON;` and parameterized queries
-  - Python `cryptography` library for X.509 certificate parsing
-  - Python `ssl` and `socket` for authorized TLS inspection
-  - Pytest (Automated backend testing)
+Long-running scans run asynchronously without blocking Flask HTTP request handlers:
 
----
+```
+[Client / API Request]
+         │  POST /api/v1/jobs
+         ▼
+[ScanJob Created (status='queued')] ──► SQLite (scan_jobs table)
+         │
+         ▼ (thread wake event)
+[BackgroundJobManager] (Bounded Worker Threads: max_workers=3)
+         │  claims job atomically (status='running', started_at)
+         ▼
+[Scanner / Handler Execution] (bounded timeouts & exponential backoff)
+         │
+         ├── Success ──► status='completed', progress=100%, completed_at
+         │
+         └── Failure ──► retry_count < max_retries ? status='queued' : status='failed'
+```
 
-## Asset Inventory Database Schema (SQLite)
-
-The `assets` table persists all registered cryptographic assets with strict check constraints:
-
-| Column | Type | Constraints / Defaults | Description |
-|---|---|---|---|
-| `id` | TEXT | PRIMARY KEY | Unique asset identifier (e.g. `ast_xxxx`) |
-| `name` | TEXT | NOT NULL | Asset display name |
-| `asset_type` | TEXT | NOT NULL CHECK (server, website, application, certificate, database, other) | Category of asset |
-| `environment`| TEXT | NOT NULL CHECK (development, testing, staging, production) | Deployment stage |
-| `hostname` | TEXT | NULL | Fully qualified domain name or internal host |
-| `ip_address` | TEXT | NULL | Host IP address (IPv4 / IPv6) |
-| `owner` | TEXT | NULL | Responsible team or individual |
-| `description`| TEXT | NULL | Cryptographic scope and notes |
-| `criticality`| TEXT | NOT NULL DEFAULT 'medium' CHECK (low, medium, high, critical) | Business impact level |
-| `status` | TEXT | NOT NULL DEFAULT 'active' CHECK (active, inactive, under_review) | Operational state |
-| `created_at` | TEXT | NOT NULL | ISO 8601 UTC timestamp |
-| `updated_at` | TEXT | NOT NULL | ISO 8601 UTC timestamp |
+- **Restart Recovery**: Stale jobs left in `running` status after an unexpected server restart are detected and recovered on startup.
+- **Safety**: Atomic claiming in SQLite prevents duplicate worker threads from processing the same job.
 
 ---
 
-## Asset REST API Endpoints
+## API Endpoints
 
-All endpoints support both `/api/v1/assets` and `/api/assets` route conventions:
+### 1. Health & Metadata
+- `GET /api/v1/health` (and `/api/health`): Service status, uptime, Python version.
+- `GET /api/v1/version` (and `/api/version`): Version metadata and quantum risk disclaimer.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/assets` | List assets (supports `search`, `asset_type`, `environment`, `criticality`, `status`, `limit`, `offset`) |
-| `GET` | `/api/v1/assets/<id>` | Retrieve a single asset by ID (404 if missing) |
-| `POST` | `/api/v1/assets` | Register a new asset (201 Created with JSON payload) |
-| `PUT` | `/api/v1/assets/<id>` | Update an existing asset (200 OK) |
-| `DELETE` | `/api/v1/assets/<id>` | Delete an asset permanently (200 OK) |
+### 2. Asset Inventory
+- `GET /api/v1/assets`: List assets (supports `search`, `asset_type`, `environment`, `criticality`, `status`, `limit`, `offset`).
+- `GET /api/v1/assets/<id>`: Retrieve single asset.
+- `POST /api/v1/assets`: Create asset.
+- `PUT /api/v1/assets/<id>`: Update asset.
+- `DELETE /api/v1/assets/<id>`: Delete asset.
+
+### 3. Persistent Scan Jobs
+- `GET /api/v1/jobs`: List scan jobs (filters: `asset_id`, `status`, `job_type`, `limit`, `offset`).
+- `GET /api/v1/jobs/<job_id>`: Retrieve specific job details, progress, and result payload.
+- `POST /api/v1/jobs`: Create and enqueue a scan job for an authorised asset.
+- `POST /api/v1/jobs/<job_id>/cancel`: Cancel a pending, queued, or running job.
+- `POST /api/v1/jobs/<job_id>/retry`: Retry a failed job within retry limits.
 
 ---
 
@@ -137,7 +138,7 @@ pip install -r requirements.txt
 # Run automated tests
 python -m pytest tests/ -v
 
-# Start the Flask API server (runs on http://127.0.0.1:5000)
+# Start the Flask API server with background workers
 python app.py
 ```
 
@@ -160,28 +161,14 @@ The frontend will automatically proxy `/api/*` requests to the Flask backend run
 
 ---
 
-## Development Roadmap
+## Automation Roadmap
 
-| Milestone | Description | Status |
-|---|---|---|
-| **Stage 1** | **Frontend/Backend Foundation, API Factory & UI/UX** | **Completed** |
-| **Stage 2** | **Database Models & Cryptographic Asset Inventory** | **Completed** |
-| **Stage 3** | X.509 Certificate Scanner (PEM/DER) | Planned |
-| **Stage 4** | Source Code & Configuration Static Scanner | Planned |
-| **Stage 5** | Authorised TLS Endpoint Scanner (with SSRF guard) | Planned |
-| **Stage 6** | Unified Findings, Correlation & Evidence Store | Planned |
-| **Stage 7** | Explainable Risk Assessment Engine | Planned |
-| **Stage 8** | PQC Migration Recommendation Engine (NIST FIPS 203/204/205) | Planned |
-| **Stage 9** | Migration Task Planner & Dependency Tracking | Planned |
-| **Stage 10**| Interactive Dashboard Charts & Audit Reports | Planned |
-| **Stage 11**| Security Hardening & Integration Test Suite | Planned |
-| **Stage 12**| Complete Documentation & Hackathon Demonstration | Planned |
-
----
-
-## Git Workflow
-
-Follow conventional commit formats:
-- `chore: initialize QuantumShield web application`
-- `feat: implement database and asset inventory`
-- `test: add unit and integration test coverage`
+1. **Milestone 1**: **Persistent Background Job Processing and Worker Framework** (**Completed**)
+2. **Milestone 2**: Scan Orchestration (Certificate, TLS, Static Configuration)
+3. **Milestone 3**: Scheduling & Asset Automation Policies
+4. **Milestone 4**: Finding Deduplication & Change Detection
+5. **Milestone 5**: Automatic Risk & PQC Recommendations
+6. **Milestone 6**: Event Processing & Notification Engine
+7. **Milestone 7**: Automation Control Center & Dashboard
+8. **Milestone 8**: Security & Integration Test Suite
+9. **Milestone 9**: Operational Documentation & Deployment

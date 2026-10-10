@@ -58,7 +58,7 @@ def init_db(db_path: Union[str, Path]) -> None:
             );
         """)
 
-        # Indexes for fast search and filtering
+        # Indexes for assets
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_name ON assets (name);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_hostname ON assets (hostname);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_type ON assets (asset_type);")
@@ -66,5 +66,34 @@ def init_db(db_path: Union[str, Path]) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_criticality ON assets (criticality);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_status ON assets (status);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_updated_at ON assets (updated_at);")
+
+        # Scan Jobs Table (Automation & Background Processing)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scan_jobs (
+                id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                progress INTEGER NOT NULL DEFAULT 0,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 3,
+                error_message TEXT,
+                result_data TEXT,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                CONSTRAINT chk_job_status CHECK (
+                    status IN ('pending', 'queued', 'running', 'completed', 'partially_completed', 'failed', 'cancelled')
+                )
+            );
+        """)
+
+        # Indexes for jobs
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_asset_id ON scan_jobs (asset_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_status ON scan_jobs (status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_at ON scan_jobs (created_at);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_job_type ON scan_jobs (job_type);")
 
     conn.close()

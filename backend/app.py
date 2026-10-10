@@ -16,11 +16,13 @@ from config import get_config
 from quantumshield.extensions import cors
 from quantumshield.core.exceptions import QuantumShieldError
 from quantumshield.storage.database import init_db
+from quantumshield.services.job_worker import BackgroundJobManager
 from quantumshield.api.health import health_bp
 from quantumshield.api.assets import assets_bp
+from quantumshield.api.jobs import jobs_bp
 
 
-def create_app(config_object=None):
+def create_app(config_object=None, enable_workers=True):
     """
     Construct and configure the Flask application instance.
     """
@@ -40,9 +42,16 @@ def create_app(config_object=None):
     # Initialize extensions
     cors.init_app(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
 
+    # Background Job Manager
+    if enable_workers and not app.config.get("TESTING", False) and db_path:
+        job_manager = BackgroundJobManager(db_path)
+        job_manager.start()
+        app.extensions["job_manager"] = job_manager
+
     # Register Blueprints
     app.register_blueprint(health_bp)
     app.register_blueprint(assets_bp)
+    app.register_blueprint(jobs_bp)
 
     # Global Exception Handlers
     @app.errorhandler(QuantumShieldError)

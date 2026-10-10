@@ -26,6 +26,46 @@ export interface AssetListResponse {
   offset: number;
 }
 
+export type JobStatus =
+  | 'pending'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'partially_completed'
+  | 'failed'
+  | 'cancelled';
+
+export type JobType =
+  | 'certificate_scan'
+  | 'tls_scan'
+  | 'static_scan'
+  | 'full_orchestrated_scan'
+  | 'change_detection';
+
+export interface ScanJob {
+  id: string;
+  job_type: JobType;
+  asset_id: string;
+  operation: string;
+  status: JobStatus;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  progress: number;
+  retry_count: number;
+  max_retries: number;
+  error_message?: string | null;
+  result_data?: Record<string, any> | string | null;
+}
+
+export interface JobListResponse {
+  status: string;
+  jobs: ScanJob[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface HealthStatus {
   status: string;
   service: string;
