@@ -42,9 +42,9 @@ const navGroups: NavGroup[] = [
   {
     label: 'PQC Operations',
     items: [
-      { name: 'Hybrid Lab', path: '/hybrid-lab', icon: Layers, badge: 'Stage 2' },
-      { name: 'Rollout Center', path: '/rollout-center', icon: Sliders, badge: 'Stage 4' },
-      { name: 'Retirement Center', path: '/retirement-center', icon: AlertOctagon, badge: 'Stage 5' },
+      { name: 'Hybrid Lab', path: '/hybrid-lab', icon: Layers },
+      { name: 'Rollout Center', path: '/rollout-center', icon: Sliders },
+      { name: 'Retirement Center', path: '/retirement-center', icon: AlertOctagon },
     ],
   },
 ];
