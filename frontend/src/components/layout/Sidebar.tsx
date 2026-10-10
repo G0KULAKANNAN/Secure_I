@@ -16,6 +16,7 @@ import {
   Layers,
   Network,
   Sliders,
+  AlertOctagon,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -31,6 +32,7 @@ const navItems = [
   { name: 'Hybrid Lab', path: '/hybrid-lab', icon: Layers },
   { name: 'Network Lab', path: '/network-lab', icon: Network },
   { name: 'Rollout Center', path: '/rollout-center', icon: Sliders },
+  { name: 'Retirement Center', path: '/retirement-center', icon: AlertOctagon },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {

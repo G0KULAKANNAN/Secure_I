@@ -510,3 +510,92 @@ export interface TelemetryListResponse {
   total: number;
 }
 
+// -------------------------------------------------------------
+// Stage 5: Classical Cryptography Decommissioning Types
+// -------------------------------------------------------------
+
+export type PolicyStatus =
+  | 'APPROVED'
+  | 'APPROVED_WITH_CONDITIONS'
+  | 'MIGRATION_REQUIRED'
+  | 'DEPRECATED'
+  | 'PROHIBITED_BY_CONFIGURED_POLICY'
+  | 'NEEDS_REVIEW';
+
+export interface DecommissioningPolicy {
+  id: string;
+  name: string;
+  algorithm: string;
+  primitive_category: string;
+  status: PolicyStatus;
+  conditions?: string | null;
+  enforcement_deadline?: string | null;
+  rationale?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CryptoDependencyStatus = 'active' | 'migrating' | 'decommissioned' | 'blocked';
+
+export interface CryptoDependency {
+  id: string;
+  asset_id?: string | null;
+  service_name: string;
+  primitive_category: string;
+  current_algorithm: string;
+  target_algorithm: string;
+  status: CryptoDependencyStatus;
+  policy_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DecommissioningPlanState =
+  | 'DISCOVERED'
+  | 'MIGRATION_VERIFIED'
+  | 'READY_FOR_REVIEW'
+  | 'APPROVED'
+  | 'DECOMMISSIONING_PLANNED'
+  | 'COMPLETED'
+  | 'BLOCKED'
+  | 'ROLLED_BACK';
+
+export interface DecommissioningPlan {
+  id: string;
+  name: string;
+  target_primitive: string;
+  affected_services: string[];
+  state: DecommissioningPlanState;
+  readiness_assessment?: ReadinessAssessment | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  decommissioned_at?: string | null;
+  rollback_instructions?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PolicyListResponse {
+  status: string;
+  policies: DecommissioningPolicy[];
+  total: number;
+}
+
+export interface DependencyListResponse {
+  status: string;
+  dependencies: CryptoDependency[];
+  total: number;
+}
+
+export interface DecommissioningPlanListResponse {
+  status: string;
+  plans: DecommissioningPlan[];
+  total: number;
+}
+
+export interface DecommissioningPlanResponse {
+  status: string;
+  plan: DecommissioningPlan;
+}
+
+

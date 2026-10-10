@@ -386,11 +386,80 @@ def init_db(db_path: Union[str, Path]) -> None:
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_rollout ON telemetry_events (rollout_id);")
 
+        # -------------------------------------------------------------
+        # Stage 5: Classical Cryptography Decommissioning Tables
+        # -------------------------------------------------------------
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS decommissioning_policies (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                algorithm TEXT NOT NULL,
+                primitive_category TEXT NOT NULL,
+                status TEXT NOT NULL,
+                conditions TEXT,
+                enforcement_deadline TEXT,
+                rationale TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CONSTRAINT chk_policy_status CHECK (
+                    status IN ('APPROVED', 'APPROVED_WITH_CONDITIONS', 'MIGRATION_REQUIRED', 'DEPRECATED', 'PROHIBITED_BY_CONFIGURED_POLICY', 'NEEDS_REVIEW')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_decom_pol_alg ON decommissioning_policies (algorithm);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_decom_pol_stat ON decommissioning_policies (status);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS crypto_dependencies (
+                id TEXT PRIMARY KEY,
+                asset_id TEXT,
+                service_name TEXT NOT NULL,
+                primitive_category TEXT NOT NULL,
+                current_algorithm TEXT NOT NULL,
+                target_algorithm TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                policy_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+                FOREIGN KEY (policy_id) REFERENCES decommissioning_policies(id) ON DELETE SET NULL,
+                CONSTRAINT chk_dep_status CHECK (
+                    status IN ('active', 'migrating', 'decommissioned', 'blocked')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crypto_dep_srv ON crypto_dependencies (service_name);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crypto_dep_stat ON crypto_dependencies (status);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS decommissioning_plans (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                target_primitive TEXT NOT NULL,
+                affected_services_json TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'DISCOVERED',
+                readiness_assessment_json TEXT,
+                approved_by TEXT,
+                approved_at TEXT,
+                decommissioned_at TEXT,
+                rollback_instructions TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CONSTRAINT chk_decom_plan_state CHECK (
+                    state IN ('DISCOVERED', 'MIGRATION_VERIFIED', 'READY_FOR_REVIEW', 'APPROVED', 'DECOMMISSIONING_PLANNED', 'COMPLETED', 'BLOCKED', 'ROLLED_BACK')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_decom_plan_state ON decommissioning_plans (state);")
+
         # Seed default environments for Stage 4
         _seed_default_environments(conn)
 
         # Seed default crypto capabilities if empty
         _seed_default_capabilities(conn)
+
+        # Seed default decommissioning policies for Stage 5
+        _seed_default_decommissioning_policies(conn)
 
     conn.close()
 
@@ -551,6 +620,142 @@ def _seed_default_capabilities(conn: sqlite3.Connection) -> None:
                 staging_test_status, negotiation_status, failure_reason, security_notes,
                 last_verified_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, seeds)
+
+
+def _seed_default_decommissioning_policies(conn: sqlite3.Connection) -> None:
+    """Seed standard decommissioning policies for Stage 5."""
+    cursor = conn.execute("SELECT COUNT(*) as count FROM decommissioning_policies;")
+    if cursor.fetchone()["count"] == 0:
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        seeds = [
+            (
+                "pol_rsa_1024",
+                "RSA-1024 Key Exchange Prohibition",
+                "RSA-1024",
+                "key_exchange",
+                "PROHIBITED_BY_CONFIGURED_POLICY",
+                "Immediate revocation. Factoring feasible with classical hardware.",
+                "2024-01-01T00:00:00Z",
+                "NIST SP 800-131A Rev 2 disallows RSA < 2048. Factoring vulnerabilities present.",
+                now,
+                now,
+            ),
+            (
+                "pol_rsa_2048",
+                "RSA-2048 Key Exchange Migration Mandate",
+                "RSA-2048",
+                "key_exchange",
+                "MIGRATION_REQUIRED",
+                "Phase out for TLS 1.3 hybrid key exchange by deadline.",
+                "2030-12-31T23:59:59Z",
+                "Vulnerable to Shor's algorithm on Cryptanalytically Relevant Quantum Computer (CRQC).",
+                now,
+                now,
+            ),
+            (
+                "pol_dh_classical",
+                "Finite Field Diffie-Hellman Deprecation",
+                "Diffie-Hellman",
+                "key_exchange",
+                "DEPRECATED",
+                "Allow only in legacy read/decrypt mode, no new handshakes permitted.",
+                "2026-06-30T00:00:00Z",
+                "Vulnerable to quantum discrete logarithm attacks; lack of perfect forward secrecy when misconfigured.",
+                now,
+                now,
+            ),
+            (
+                "pol_ecdsa_p256",
+                "ECDSA P-256 Digital Signature Transition",
+                "ECDSA-P256",
+                "digital_signature",
+                "MIGRATION_REQUIRED",
+                "Dual-stack signatures with ML-DSA-65 (FIPS 204) where supported.",
+                "2033-12-31T23:59:59Z",
+                "Elliptic curve discrete logarithm solvable in polynomial time by quantum adversary.",
+                now,
+                now,
+            ),
+            (
+                "pol_sha1",
+                "SHA-1 Hash Function Complete Prohibition",
+                "SHA-1",
+                "hashing",
+                "PROHIBITED_BY_CONFIGURED_POLICY",
+                "Zero tolerance across all certificates and checksums.",
+                "2020-01-01T00:00:00Z",
+                "Collision attacks demonstrated. Disallowed by all modern TLS trust stores.",
+                now,
+                now,
+            ),
+            (
+                "pol_3des",
+                "Triple DES (3DES) Symmetric Cipher Prohibition",
+                "3DES",
+                "symmetric_encryption",
+                "PROHIBITED_BY_CONFIGURED_POLICY",
+                "Immediate removal from cipher suites.",
+                "2023-12-31T00:00:00Z",
+                "Sweet32 collision attack vulnerability due to 64-bit block size. NIST deprecated.",
+                now,
+                now,
+            ),
+            (
+                "pol_aes_128",
+                "AES-128 Symmetric Encryption Conditional Use",
+                "AES-128",
+                "symmetric_encryption",
+                "APPROVED_WITH_CONDITIONS",
+                "Permitted for short-lived sessions; recommend AES-256 for long-term data at rest (Grover's algorithm resistance).",
+                "2035-12-31T23:59:59Z",
+                "Grover's algorithm halves effective symmetric key length to 64 bits. AES-256 recommended.",
+                now,
+                now,
+            ),
+            (
+                "pol_aes_256",
+                "AES-256 Symmetric Encryption Approved",
+                "AES-256",
+                "symmetric_encryption",
+                "APPROVED",
+                "Fully quantum-resistant symmetric cipher (128-bit quantum security strength).",
+                None,
+                "Retains 128 bits of security against Grover's algorithm quantum search.",
+                now,
+                now,
+            ),
+            (
+                "pol_hybrid_mlkem768",
+                "X25519MLKEM768 Hybrid Key Exchange Approved",
+                "X25519MLKEM768",
+                "key_exchange",
+                "APPROVED",
+                "Recommended standard for TLS 1.3 dual-layer post-quantum defense.",
+                None,
+                "Combines classical ECDH X25519 with lattice-based ML-KEM-768 (FIPS 203).",
+                now,
+                now,
+            ),
+            (
+                "pol_mldsa_65",
+                "ML-DSA-65 Post-Quantum Signature Approved",
+                "ML-DSA-65",
+                "digital_signature",
+                "APPROVED",
+                "Primary standard for quantum-safe digital signatures (FIPS 204).",
+                None,
+                "Lattice-based digital signature standard offering Category 3 quantum hardness.",
+                now,
+                now,
+            ),
+        ]
+        conn.executemany("""
+            INSERT INTO decommissioning_policies (
+                id, name, algorithm, primitive_category, status,
+                conditions, enforcement_deadline, rationale, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, seeds)
 
 

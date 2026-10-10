@@ -12,6 +12,7 @@ const pageTitles: Record<string, string> = {
   '/hybrid-lab': 'Hybrid Cryptography Lab',
   '/network-lab': 'Network Compatibility Lab',
   '/rollout-center': 'Staged Rollout Management',
+  '/retirement-center': 'Classical Cryptography Decommissioning',
   '/assets': 'Asset Inventory',
   '/jobs': 'Job Processing Center',
   '/risk': 'Explainable Risk Assessment',

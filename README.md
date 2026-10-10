@@ -120,12 +120,26 @@ Long-running scans run asynchronously without blocking Flask HTTP request handle
 
 ---
 
+## Post-Quantum Cryptography (PQC) Transition Architecture
+
+QuantumShield implements the complete end-to-end PQC transition lifecycle across 5 stages:
+
+| Stage | Feature Area | Route / UI | Core Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Stage 1** | **Asset Inventory & Discovery** | `/assets`, `/scan`, `/findings` | SQLite-backed asset catalog, X.509 certificate scanner, source code scanner, authorized TLS handshake probe, and explainable risk scores. |
+| **Stage 2** | **Hybrid Cryptography in Staging** | `/hybrid-lab` | Capability registry, hybrid profile validation (`X25519MLKEM768`), host capability detection, transparent simulation honesty, and staging approval workflow. |
+| **Stage 3** | **Network MTU & Middlebox Verification** | `/network-lab` | Handshake payload size analysis (~3.5 KB), 3 execution modes (simulation, loopback, authorized external), PMTU diagnostic classification, and remediation guidance. |
+| **Stage 4** | **Staged Production Rollout** | `/rollout-center` | 5-stage canary progression (1% → 5% → 25% → 50% → 100%), 9-point readiness gate evaluation, real-time telemetry observation, and automated emergency rollback (< 2.0% error rate). |
+| **Stage 5** | **Classical Decommissioning** | `/retirement-center` | Algorithmic policy enforcement, primitive-specific dependency mapping (KEM vs signature vs symmetric), 10-point readiness gates, and rollback playbook. |
+
+---
+
 ## Quickstart & Installation
 
 ### Prerequisites
 
 - **Python**: 3.11 or newer (Python 3.13 tested)
-- **Node.js**: v18 or newer (v22 tested) with npm
+- **Node.js**: v18 or newer with npm
 
 ### 1. Backend Setup
 
@@ -136,14 +150,11 @@ cd backend
 # Install dependencies
 pip install -r requirements.txt
 
-# Run automated tests (all 33 unit and lifecycle tests pass)
+# Run automated test suite (all 71 tests pass)
 python -m pytest tests/ -v
 
-# Start the Flask API server with background workers
+# Start the Flask API server
 python app.py
-
-# Optional: Run worker independently as a standalone daemon
-python worker.py --workers 3
 ```
 
 ### 2. Frontend Setup
@@ -157,22 +168,20 @@ cd frontend
 # Install Node dependencies
 npm install
 
+# Build for production
+npm run build
+
 # Start the Vite development server (runs on http://localhost:5173)
 npm run dev
 ```
 
-The frontend will automatically proxy `/api/*` requests to the Flask backend running on port 5000.
+The frontend will automatically proxy `/api/*` and `/api/v1/*` requests to the Flask backend running on port 5000.
 
 ---
 
-## Automation Roadmap
+## Security Model & Auditing
 
-1. **Milestone 1**: **Persistent Background Job Processing and Worker Framework** (**Completed**)
-2. **Milestone 2**: Scan Orchestration (Certificate, TLS, Static Configuration)
-3. **Milestone 3**: Scheduling & Asset Automation Policies
-4. **Milestone 4**: Finding Deduplication & Change Detection
-5. **Milestone 5**: Automatic Risk & PQC Recommendations
-6. **Milestone 6**: Event Processing & Notification Engine
-7. **Milestone 7**: Automation Control Center & Dashboard
-8. **Milestone 8**: Security & Integration Test Suite
-9. **Milestone 9**: Operational Documentation & Deployment
+- **Safe Network Controls**: Loopback isolation by default (`127.0.0.1`), strict allowlisting for external targets, SSRF protections blocking cloud metadata (`169.254.169.254`), and hard 5.0s socket timeouts.
+- **Simulation Honesty**: Honest labeling (`is_simulated = true`) for all simulated key exchanges and network tests when host OpenSSL lacks native post-quantum provider extensions.
+- **Immutable SQLite Audit Trail**: All governance actions write append-only records to `audit_events`.
+

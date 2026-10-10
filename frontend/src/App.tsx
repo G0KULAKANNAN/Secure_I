@@ -10,6 +10,7 @@ import { Migration } from './pages/Migration';
 import { HybridLab } from './pages/HybridLab';
 import { NetworkLab } from './pages/NetworkLab';
 import { RolloutCenter } from './pages/RolloutCenter';
+import { RetirementCenter } from './pages/RetirementCenter';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { JobCenter } from './pages/JobCenter';
@@ -30,6 +31,7 @@ export const App: React.FC = () => {
           <Route path="hybrid-lab" element={<HybridLab />} />
           <Route path="network-lab" element={<NetworkLab />} />
           <Route path="rollout-center" element={<RolloutCenter />} />
+          <Route path="retirement-center" element={<RetirementCenter />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>

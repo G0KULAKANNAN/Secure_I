@@ -29,6 +29,7 @@ from quantumshield.api.hybrid import hybrid_bp
 from quantumshield.api.audit import audit_bp
 from quantumshield.api.network import network_bp
 from quantumshield.api.rollout import rollout_bp
+from quantumshield.api.decommissioning import decommissioning_bp
 
 
 def create_app(config_object=None, enable_workers=True):
@@ -70,6 +71,7 @@ def create_app(config_object=None, enable_workers=True):
     app.register_blueprint(audit_bp)
     app.register_blueprint(network_bp)
     app.register_blueprint(rollout_bp)
+    app.register_blueprint(decommissioning_bp)
 
     # Global Exception Handlers
     @app.errorhandler(QuantumShieldError)
