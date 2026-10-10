@@ -33,3 +33,10 @@ class ConfigurationError(QuantumShieldError):
     """Raised when configuration is invalid."""
     def __init__(self, message: str, payload: dict = None):
         super().__init__(message, status_code=500, payload=payload)
+
+
+class ConflictError(QuantumShieldError):
+    """Raised on state conflicts (e.g. duplicate active scan)."""
+    def __init__(self, message: str, payload: dict = None):
+        super().__init__(message, status_code=409, payload=payload)
+

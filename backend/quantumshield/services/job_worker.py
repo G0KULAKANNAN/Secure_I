@@ -45,9 +45,12 @@ class BackgroundJobManager:
         self._register_default_handlers()
 
     def _register_default_handlers(self) -> None:
-        """Register built-in safe execution handlers for milestone 1."""
+        """Register built-in safe execution handlers for milestone 1 & 2."""
         self.register_handler("health_check", self._handle_health_check)
         self.register_handler("asset_validation", self._handle_asset_validation)
+        self.register_handler("certificate_scan", self._handle_certificate_scan)
+        self.register_handler("static_scan", self._handle_static_scan)
+        self.register_handler("tls_scan", self._handle_tls_scan)
 
     def register_handler(
         self, job_type: str, handler: Union[Callable[[ScanJob], Any], Callable[[ScanJob, Callable[[], bool]], Any]]
@@ -207,6 +210,10 @@ class BackgroundJobManager:
             job.error_code = None
             job.error_message = None
             self.repo.update(job)
+
+            # Automatically persist findings and sync scan run if linked
+            self._sync_job_results_and_findings(job, result_data)
+
             with self._lock:
                 self._succeeded_count += 1
             logger.info(f"Job '{job.id}' completed successfully.")
@@ -297,3 +304,122 @@ class BackgroundJobManager:
             },
             "validated_at": utc_now_iso(),
         }
+
+    def _sync_job_results_and_findings(self, job: ScanJob, result_data: Any) -> None:
+        """Persist findings and synchronize parent scan run state."""
+        try:
+            if isinstance(result_data, dict) and "findings" in result_data:
+                from quantumshield.storage.finding_repository import FindingRepository
+                from quantumshield.models.finding import Finding
+                finding_repo = FindingRepository(self.db_path)
+                for f_dict in result_data.get("findings", []):
+                    finding = Finding(
+                        asset_id=job.asset_id or "",
+                        scan_run_id=job.scan_run_id,
+                        job_id=job.id,
+                        scanner_type=job.job_type,
+                        algorithm=f_dict.get("algorithm", "Unknown"),
+                        cryptographic_primitive=f_dict.get("cryptographic_primitive", "key_establishment"),
+                        quantum_vulnerable=f_dict.get("quantum_vulnerable", True),
+                        recommended_pqc=f_dict.get("recommended_pqc", "ML-KEM-768"),
+                        rule_id=f_dict.get("rule_id", "GENERIC-RULE"),
+                        title=f_dict.get("title", "Finding"),
+                        description=f_dict.get("description", ""),
+                        severity=f_dict.get("severity", "medium"),
+                        evidence=f_dict.get("evidence", ""),
+                        file_path=f_dict.get("file_path"),
+                        line_number=f_dict.get("line_number"),
+                        confidence=f_dict.get("confidence", "high"),
+                        remediation_status=f_dict.get("remediation_status", "potential_exposure"),
+                    )
+                    finding_repo.save_finding(finding)
+
+            if job.scan_run_id:
+                from quantumshield.storage.scan_repository import ScanRepository
+                scan_repo = ScanRepository(self.db_path)
+                run = scan_repo.get_by_id(job.scan_run_id)
+                if run:
+                    child_jobs = self.repo.list_by_scan_run(run.id)
+                    run.update_from_jobs(child_jobs)
+                    scan_repo.update(run)
+        except Exception as exc:
+            logger.error(f"Error syncing findings/scan run for job {job.id}: {exc}", exc_info=True)
+
+    def _handle_certificate_scan(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Execute real X.509 Certificate Scanner."""
+        if not job.asset_id:
+            raise ValueError("Target asset_id is required for certificate scan.")
+        asset = self.asset_repo.get_by_id(job.asset_id)
+        if not asset:
+            raise ValueError(f"Asset '{job.asset_id}' not found.")
+
+        job.progress = 30
+        self.repo.update(job)
+
+        from quantumshield.scanner.certificate_scanner import CertificateScanner
+        scanner = CertificateScanner()
+        payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+        result = scanner.scan(asset, payload)
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True}
+
+        if result.status == "failed" and result.error_message:
+            raise RuntimeError(result.error_message)
+
+        job.progress = 90
+        self.repo.update(job)
+        return result.to_dict()
+
+    def _handle_static_scan(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Execute real Static Cryptography Scanner."""
+        if not job.asset_id:
+            raise ValueError("Target asset_id is required for static scan.")
+        asset = self.asset_repo.get_by_id(job.asset_id)
+        if not asset:
+            raise ValueError(f"Asset '{job.asset_id}' not found.")
+
+        job.progress = 30
+        self.repo.update(job)
+
+        from quantumshield.scanner.static_scanner import StaticScanner
+        scanner = StaticScanner()
+        payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+        result = scanner.scan(asset, payload)
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True}
+
+        if result.status == "failed" and result.error_message:
+            raise RuntimeError(result.error_message)
+
+        job.progress = 90
+        self.repo.update(job)
+        return result.to_dict()
+
+    def _handle_tls_scan(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Execute real TLS Handshake Scanner."""
+        if not job.asset_id:
+            raise ValueError("Target asset_id is required for TLS scan.")
+        asset = self.asset_repo.get_by_id(job.asset_id)
+        if not asset:
+            raise ValueError(f"Asset '{job.asset_id}' not found.")
+
+        job.progress = 30
+        self.repo.update(job)
+
+        from quantumshield.scanner.tls_scanner import TlsScanner
+        scanner = TlsScanner(allow_local_lab=True)
+        payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+        result = scanner.scan(asset, payload)
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True}
+
+        if result.status == "failed" and result.error_message:
+            raise RuntimeError(result.error_message)
+
+        job.progress = 90
+        self.repo.update(job)
+        return result.to_dict()
+

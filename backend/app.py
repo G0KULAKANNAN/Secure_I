@@ -20,6 +20,11 @@ from quantumshield.services.job_worker import BackgroundJobManager
 from quantumshield.api.health import health_bp
 from quantumshield.api.assets import assets_bp
 from quantumshield.api.jobs import jobs_bp
+from quantumshield.api.scans import scans_bp
+from quantumshield.api.scanners import scanners_bp
+from quantumshield.api.risk import risk_bp
+from quantumshield.api.migration import migration_bp
+from quantumshield.api.reports import reports_bp
 
 
 def create_app(config_object=None, enable_workers=True):
@@ -52,6 +57,11 @@ def create_app(config_object=None, enable_workers=True):
     app.register_blueprint(health_bp)
     app.register_blueprint(assets_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(scans_bp)
+    app.register_blueprint(scanners_bp)
+    app.register_blueprint(risk_bp)
+    app.register_blueprint(migration_bp)
+    app.register_blueprint(reports_bp)
 
     # Global Exception Handlers
     @app.errorhandler(QuantumShieldError)

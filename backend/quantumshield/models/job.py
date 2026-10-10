@@ -81,6 +81,7 @@ class ScanJob:
     next_retry_at: Optional[str]
     error_code: Optional[str]
     error_message: Optional[str]
+    scan_run_id: Optional[str]
 
     def __init__(
         self,
@@ -102,6 +103,7 @@ class ScanJob:
         next_retry_at: Optional[str] = None,
         error_code: Optional[str] = None,
         error_message: Optional[str] = None,
+        scan_run_id: Optional[str] = None,
         # Legacy aliases
         retry_count: Optional[int] = None,
         max_retries: Optional[int] = None,
@@ -147,6 +149,7 @@ class ScanJob:
         self.next_retry_at = next_retry_at
         self.error_code = error_code
         self.error_message = error_message
+        self.scan_run_id = scan_run_id
 
     # Backward compatibility properties
     @property
@@ -243,6 +246,7 @@ class ScanJob:
             "next_retry_at": self.next_retry_at,
             "error_code": self.error_code,
             "error_message": self.error_message,
+            "scan_run_id": self.scan_run_id,
             # Legacy fields for backward compatibility
             "retry_count": self.attempt_count,
             "max_retries": self.max_attempts,
@@ -296,4 +300,5 @@ class ScanJob:
             next_retry_at=data.get("next_retry_at"),
             error_code=data.get("error_code"),
             error_message=data.get("error_message"),
+            scan_run_id=data.get("scan_run_id"),
         )

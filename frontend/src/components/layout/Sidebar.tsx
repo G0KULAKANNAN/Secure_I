@@ -21,15 +21,10 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { name: 'Overview', path: '/', icon: LayoutDashboard },
-  { name: 'Asset Inventory', path: '/assets', icon: Server },
-  { name: 'Job Center', path: '/jobs', icon: Cpu },
-  { name: 'Scanner', path: '/scanner', icon: Radar },
+  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'Scan', path: '/scan', icon: Radar },
   { name: 'Findings', path: '/findings', icon: FileSearch },
-  { name: 'Risk Assessment', path: '/risk', icon: AlertTriangle },
-  { name: 'PQC Migration', path: '/migration', icon: GitPullRequest },
-  { name: 'Reports', path: '/reports', icon: FileBarChart },
-  { name: 'Settings', path: '/settings', icon: Settings },
+  { name: 'Migration Guide', path: '/migration', icon: GitPullRequest },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {

@@ -23,10 +23,10 @@ def utc_now_iso() -> str:
 
 @dataclass
 class Asset:
-    id: str
-    name: str
-    asset_type: str
-    environment: str
+    id: str = ""
+    name: str = ""
+    asset_type: str = "other"
+    environment: str = "production"
     hostname: Optional[str] = None
     ip_address: Optional[str] = None
     owner: Optional[str] = None
@@ -74,10 +74,15 @@ class Asset:
         if self.hostname and len(self.hostname.strip()) > 255:
             raise ValidationError("Hostname cannot exceed 255 characters.")
 
-        if self.ip_address:
+        if self.ip_address and self.ip_address.strip():
             clean_ip = self.ip_address.strip()
             if len(clean_ip) > 45:
                 raise ValidationError("IP address cannot exceed 45 characters.")
+            import ipaddress
+            try:
+                ipaddress.ip_address(clean_ip)
+            except ValueError:
+                raise ValidationError(f"Invalid IP address format '{clean_ip}'. Must be a valid IPv4 or IPv6 address.")
 
         if self.owner and len(self.owner.strip()) > 255:
             raise ValidationError("Owner cannot exceed 255 characters.")

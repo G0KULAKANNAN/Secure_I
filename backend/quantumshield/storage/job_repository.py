@@ -32,8 +32,8 @@ class JobRepository:
                         id, job_type, asset_id, operation, status, priority,
                         payload_json, result_json, progress, attempt_count,
                         max_attempts, created_at, started_at, finished_at,
-                        updated_at, next_retry_at, error_code, error_message
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        updated_at, next_retry_at, error_code, error_message, scan_run_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         job.id,
@@ -54,6 +54,7 @@ class JobRepository:
                         job.next_retry_at,
                         job.error_code,
                         job.error_message,
+                        job.scan_run_id,
                     ),
                 )
         finally:
@@ -153,7 +154,8 @@ class JobRepository:
                         updated_at = ?,
                         next_retry_at = ?,
                         error_code = ?,
-                        error_message = ?
+                        error_message = ?,
+                        scan_run_id = ?
                     WHERE id = ?;
                     """,
                     (
@@ -173,6 +175,7 @@ class JobRepository:
                         job.next_retry_at,
                         job.error_code,
                         job.error_message,
+                        job.scan_run_id,
                         job.id,
                     ),
                 )
@@ -183,6 +186,19 @@ class JobRepository:
         if affected == 0:
             return None
         return job
+
+    def list_by_scan_run(self, scan_run_id: str) -> List[ScanJob]:
+        """Fetch all child jobs belonging to a specific scan run."""
+        conn = get_db_connection(self.db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM scan_jobs WHERE scan_run_id = ? ORDER BY created_at ASC;",
+                (scan_run_id,),
+            )
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+        return [ScanJob.from_dict(dict(r)) for r in rows]
 
     def claim_next_job(self, worker_id: Optional[str] = None) -> Optional[ScanJob]:
         """

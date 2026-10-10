@@ -106,6 +106,74 @@ def init_db(db_path: Union[str, Path]) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_priority ON scan_jobs (priority);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_jobs_next_retry ON scan_jobs (next_retry_at);")
 
+        # Scan Runs Table (Scan Orchestration)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scan_runs (
+                id TEXT PRIMARY KEY,
+                asset_id TEXT NOT NULL,
+                requested_scanners TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                total_jobs INTEGER NOT NULL DEFAULT 0,
+                completed_jobs INTEGER NOT NULL DEFAULT 0,
+                failed_jobs INTEGER NOT NULL DEFAULT 0,
+                cancelled_jobs INTEGER NOT NULL DEFAULT 0,
+                result_summary TEXT,
+                error_summary TEXT,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                CONSTRAINT chk_scan_run_status CHECK (
+                    status IN ('queued', 'running', 'completed', 'partially_completed', 'failed', 'cancelled')
+                )
+            );
+        """)
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_asset_id ON scan_runs (asset_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_status ON scan_runs (status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_runs_created_at ON scan_runs (created_at);")
+
+        # Unified Findings Table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS findings (
+                id TEXT PRIMARY KEY,
+                asset_id TEXT NOT NULL,
+                scan_run_id TEXT,
+                job_id TEXT,
+                scanner_type TEXT NOT NULL,
+                algorithm TEXT NOT NULL,
+                cryptographic_primitive TEXT NOT NULL DEFAULT 'key_establishment',
+                quantum_vulnerable INTEGER NOT NULL DEFAULT 1,
+                recommended_pqc TEXT NOT NULL DEFAULT 'ML-KEM-768',
+                rule_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'high',
+                evidence TEXT NOT NULL,
+                file_path TEXT,
+                line_number INTEGER,
+                confidence TEXT NOT NULL DEFAULT 'high',
+                remediation_status TEXT NOT NULL DEFAULT 'potential_exposure',
+                fingerprint TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY (scan_run_id) REFERENCES scan_runs(id) ON DELETE SET NULL,
+                CONSTRAINT chk_finding_severity CHECK (
+                    severity IN ('info', 'low', 'medium', 'high', 'critical')
+                ),
+                CONSTRAINT chk_finding_remediation CHECK (
+                    remediation_status IN ('potential_exposure', 'verified_usage', 'needs_review', 'remediated', 'accepted_risk')
+                )
+            );
+        """)
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_asset_id ON findings (asset_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings (severity);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings (fingerprint);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scanner_type ON findings (scanner_type);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scan_run_id ON findings (scan_run_id);")
+
     conn.close()
 
 
@@ -127,6 +195,7 @@ def _migrate_scan_jobs_table(conn: sqlite3.Connection) -> None:
         "updated_at": "TEXT",
         "next_retry_at": "TEXT",
         "error_code": "TEXT",
+        "scan_run_id": "TEXT",
     }
 
     for col_name, col_type in needed_columns.items():

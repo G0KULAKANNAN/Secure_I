@@ -4,12 +4,14 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
 const pageTitles: Record<string, string> = {
-  '/': 'Platform Overview',
+  '/': 'Dashboard Overview',
+  '/scan': 'Quantum Security Scanner',
+  '/scanner': 'Quantum Security Scanner',
+  '/findings': 'Cryptographic Findings',
+  '/migration': 'Post-Quantum Migration Guide',
   '/assets': 'Asset Inventory',
-  '/scanner': 'Cryptographic Scanners',
-  '/findings': 'Unified Findings & Evidence',
+  '/jobs': 'Job Processing Center',
   '/risk': 'Explainable Risk Assessment',
-  '/migration': 'PQC Migration Prioritisation',
   '/reports': 'Audit Reports & Export',
   '/settings': 'Platform Settings',
 };

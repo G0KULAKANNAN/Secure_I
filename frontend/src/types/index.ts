@@ -113,3 +113,116 @@ export interface SystemVersion {
   api_version: string;
   disclaimer: string;
 }
+
+export type ScanRunStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'partially_completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface ScanRun {
+  id: string;
+  asset_id: string;
+  requested_scanners: string[];
+  status: ScanRunStatus;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  total_jobs: number;
+  completed_jobs: number;
+  failed_jobs: number;
+  cancelled_jobs: number;
+  result_summary?: Record<string, any> | null;
+  error_summary?: string | null;
+}
+
+export interface ScanRunListResponse {
+  status: string;
+  scan_runs: ScanRun[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export type FindingSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface Finding {
+  id: string;
+  asset_id: string;
+  scan_run_id?: string | null;
+  job_id?: string | null;
+  scanner_type: string;
+  algorithm: string;
+  cryptographic_primitive: string;
+  quantum_vulnerable: boolean;
+  recommended_pqc: string;
+  rule_id: string;
+  title: string;
+  description: string;
+  severity: FindingSeverity;
+  evidence: string;
+  file_path?: string | null;
+  line_number?: number | null;
+  confidence: string;
+  remediation_status: string;
+  fingerprint: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FindingListResponse {
+  status: string;
+  findings: Finding[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface FindingStats {
+  total: number;
+  total_findings?: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  quantum_vulnerable: number;
+}
+
+export interface FindingStatsResponse {
+  status: string;
+  stats: FindingStats;
+}
+
+export interface DirectScanResponse {
+  status: string;
+  job_id: string;
+  asset_id: string;
+  scan_result: {
+    scanner_type: string;
+    asset_id: string;
+    status: string;
+    findings: any[];
+    metadata?: Record<string, any>;
+    error_message?: string | null;
+  };
+  findings: Finding[];
+}
+
+export interface MigrationSummary {
+  total_assets: number;
+  vulnerable_assets: number;
+  ml_kem_target_assets: number;
+  ml_dsa_target_assets: number;
+  fips_standards: Array<{
+    name: string;
+    title: string;
+    status: string;
+  }>;
+}
+
+export interface MigrationSummaryResponse {
+  status: string;
+  migration_summary: MigrationSummary;
+}
