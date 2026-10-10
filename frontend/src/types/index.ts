@@ -226,3 +226,102 @@ export interface MigrationSummaryResponse {
   status: string;
   migration_summary: MigrationSummary;
 }
+
+// ==========================================
+// Stage 2: Hybrid Cryptography Lab Types
+// ==========================================
+
+export interface HostProviderInfo {
+  openssl_version: string;
+  supports_native_hybrid: boolean;
+  supported_hybrid_groups: string[];
+  python_ssl_native_pqc: boolean;
+  provider_status: string;
+  recommendation: string;
+}
+
+export interface CryptoCapability {
+  id: string;
+  classical_group: string;
+  pqc_algorithm: string;
+  hybrid_combination: string;
+  standard_reference: string;
+  implementation_provider: string;
+  library_version: string;
+  client_compatibility: string;
+  server_compatibility: string;
+  staging_test_status: string;
+  negotiation_status: string;
+  failure_reason?: string | null;
+  security_notes?: string | null;
+  last_verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CapabilitiesResponse {
+  status: string;
+  host_provider: HostProviderInfo;
+  capabilities: CryptoCapability[];
+}
+
+export type HybridMigrationState =
+  | 'PLANNED'
+  | 'CONFIGURED'
+  | 'TESTING'
+  | 'VERIFIED'
+  | 'FAILED'
+  | 'APPROVED';
+
+export interface HybridProfile {
+  id: string;
+  profile_name: string;
+  classical_component: string;
+  pqc_component: string;
+  hybrid_combination: string;
+  environment: string;
+  rollout_status: 'disabled' | 'enabled';
+  migration_state: HybridMigrationState;
+  automatic_production_prohibited: boolean;
+  previous_config: Record<string, any>;
+  proposed_config: Record<string, any>;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HybridProfileListResponse {
+  status: string;
+  profiles: HybridProfile[];
+  total: number;
+}
+
+export interface HybridProfileResponse {
+  status: string;
+  profile: HybridProfile;
+  runs?: HybridVerificationRun[];
+}
+
+export interface HybridVerificationRun {
+  id: string;
+  profile_id: string;
+  test_mode: 'real_tls' | 'simulation';
+  status: 'passed' | 'failed' | 'unsupported';
+  negotiation_outcome: string;
+  classical_client_compatible: boolean;
+  hybrid_client_compatible: boolean;
+  observed_tls_version?: string | null;
+  negotiated_group?: string | null;
+  error_details?: string | null;
+  duration_ms: number;
+  is_simulated: boolean;
+  simulation_label: string;
+  operator: string;
+  created_at: string;
+}
+
+export interface HybridTestResponse {
+  status: string;
+  verification_run: HybridVerificationRun;
+}

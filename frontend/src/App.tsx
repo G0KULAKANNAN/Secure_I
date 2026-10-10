@@ -7,6 +7,7 @@ import { Scanner } from './pages/Scanner';
 import { Findings } from './pages/Findings';
 import { RiskAssessment } from './pages/RiskAssessment';
 import { Migration } from './pages/Migration';
+import { HybridLab } from './pages/HybridLab';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { JobCenter } from './pages/JobCenter';
@@ -24,6 +25,7 @@ export const App: React.FC = () => {
           <Route path="findings" element={<Findings />} />
           <Route path="risk" element={<RiskAssessment />} />
           <Route path="migration" element={<Migration />} />
+          <Route path="hybrid-lab" element={<HybridLab />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>

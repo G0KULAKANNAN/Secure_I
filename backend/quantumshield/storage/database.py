@@ -174,7 +174,166 @@ def init_db(db_path: Union[str, Path]) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scanner_type ON findings (scanner_type);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scan_run_id ON findings (scan_run_id);")
 
+        # -------------------------------------------------------------
+        # Stage 2: Audit Trail & Hybrid Cryptography in Staging Tables
+        # -------------------------------------------------------------
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                operator TEXT NOT NULL DEFAULT 'local_operator',
+                details_json TEXT,
+                timestamp TEXT NOT NULL
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events (entity_type, entity_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events (timestamp);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS crypto_capabilities (
+                id TEXT PRIMARY KEY,
+                classical_group TEXT NOT NULL,
+                pqc_algorithm TEXT NOT NULL,
+                hybrid_combination TEXT NOT NULL UNIQUE,
+                standard_reference TEXT NOT NULL,
+                implementation_provider TEXT NOT NULL,
+                library_version TEXT NOT NULL,
+                client_compatibility TEXT NOT NULL,
+                server_compatibility TEXT NOT NULL,
+                staging_test_status TEXT NOT NULL DEFAULT 'untested',
+                negotiation_status TEXT NOT NULL DEFAULT 'untested',
+                failure_reason TEXT,
+                security_notes TEXT,
+                last_verified_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_caps_hybrid ON crypto_capabilities (hybrid_combination);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hybrid_profiles (
+                id TEXT PRIMARY KEY,
+                profile_name TEXT NOT NULL UNIQUE,
+                classical_component TEXT NOT NULL,
+                pqc_component TEXT NOT NULL,
+                environment TEXT NOT NULL DEFAULT 'staging',
+                rollout_status TEXT NOT NULL DEFAULT 'disabled',
+                migration_state TEXT NOT NULL DEFAULT 'PLANNED',
+                automatic_production_prohibited INTEGER NOT NULL DEFAULT 1,
+                previous_config_json TEXT,
+                proposed_config_json TEXT,
+                approved_by TEXT,
+                approved_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CONSTRAINT chk_hybrid_state CHECK (
+                    migration_state IN ('PLANNED', 'CONFIGURED', 'TESTING', 'VERIFIED', 'FAILED', 'APPROVED')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hybrid_profiles_env ON hybrid_profiles (environment);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hybrid_profiles_state ON hybrid_profiles (migration_state);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hybrid_verification_runs (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                test_mode TEXT NOT NULL DEFAULT 'simulation',
+                status TEXT NOT NULL,
+                negotiation_outcome TEXT NOT NULL,
+                classical_client_compatible INTEGER NOT NULL DEFAULT 1,
+                hybrid_client_compatible INTEGER NOT NULL DEFAULT 0,
+                observed_tls_version TEXT,
+                negotiated_group TEXT,
+                error_details TEXT,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
+                is_simulated INTEGER NOT NULL DEFAULT 1,
+                operator TEXT NOT NULL DEFAULT 'local_operator',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (profile_id) REFERENCES hybrid_profiles(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hybrid_runs_profile ON hybrid_verification_runs (profile_id);")
+
+        # Seed default crypto capabilities if empty
+        _seed_default_capabilities(conn)
+
     conn.close()
+
+
+def _seed_default_capabilities(conn: sqlite3.Connection) -> None:
+    """Seed standard hybrid and classical capabilities for Stage 2."""
+    cursor = conn.execute("SELECT COUNT(*) as count FROM crypto_capabilities;")
+    if cursor.fetchone()["count"] == 0:
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        seeds = [
+            (
+                "cap_x25519_mlkem768",
+                "X25519",
+                "ML-KEM-768",
+                "X25519MLKEM768",
+                "Draft IETF / NIST FIPS 203 (Security Cat 3)",
+                "OpenSSL 3.x / liboqs / AWS-LC",
+                "liboqs-0.10.0+ / oqsprovider",
+                "Modern browsers (Chrome 124+, Firefox Nightly) and PQC-enabled clients",
+                "TLS 1.3 servers with post-quantum key exchange extension",
+                "ready_for_staging",
+                "supported_by_lib",
+                None,
+                "Recommended hybrid standard for general TLS 1.3 key encapsulation.",
+                None,
+                now,
+                now,
+            ),
+            (
+                "cap_secp256r1_mlkem768",
+                "NIST P-256",
+                "ML-KEM-768",
+                "SecP256r1MLKEM768",
+                "Draft IETF / NIST FIPS 203",
+                "OpenSSL 3.x / liboqs",
+                "liboqs-0.10.0+",
+                "Suite B and government hybrid transition clients",
+                "TLS 1.3 servers with FIPS hybrid curves",
+                "ready_for_staging",
+                "supported_by_lib",
+                None,
+                "Hybrid combination compliant with NIST P-256 legacy policy mandates.",
+                None,
+                now,
+                now,
+            ),
+            (
+                "cap_x25519_mlkem1024",
+                "X25519",
+                "ML-KEM-1024",
+                "X25519MLKEM1024",
+                "Draft IETF / NIST FIPS 203 (Security Cat 5)",
+                "OpenSSL 3.x / liboqs",
+                "liboqs-0.10.0+",
+                "High-security specialized clients",
+                "High-assurance TLS 1.3 endpoints",
+                "planned",
+                "supported_by_lib",
+                None,
+                "Highest security category hybrid parameter set for high-value targets.",
+                None,
+                now,
+                now,
+            ),
+        ]
+        conn.executemany("""
+            INSERT INTO crypto_capabilities (
+                id, classical_group, pqc_algorithm, hybrid_combination, standard_reference,
+                implementation_provider, library_version, client_compatibility, server_compatibility,
+                staging_test_status, negotiation_status, failure_reason, security_notes,
+                last_verified_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, seeds)
 
 
 def _migrate_scan_jobs_table(conn: sqlite3.Connection) -> None:

@@ -9,6 +9,7 @@ const pageTitles: Record<string, string> = {
   '/scanner': 'Quantum Security Scanner',
   '/findings': 'Cryptographic Findings',
   '/migration': 'Post-Quantum Migration Guide',
+  '/hybrid-lab': 'Hybrid Cryptography Lab',
   '/assets': 'Asset Inventory',
   '/jobs': 'Job Processing Center',
   '/risk': 'Explainable Risk Assessment',
