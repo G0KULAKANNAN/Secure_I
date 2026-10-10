@@ -1,0 +1,30 @@
+[
+  {
+    "id": "asset-demo-001",
+    "name": "api.internal.bank.net",
+    "type": "tls_endpoint",
+    "owner": "Core Banking Infrastructure",
+    "environment": "production",
+    "data_sensitivity": 5,
+    "confidentiality_lifetime_years": 15,
+    "internet_exposure": true,
+    "business_criticality": "critical",
+    "evidence_source": "Network Discovery",
+    "scan_status": "pending",
+    "remediation_status": "potential_exposure"
+  },
+  {
+    "id": "asset-demo-002",
+    "name": "payment-signer-service",
+    "type": "source_code",
+    "owner": "Payment Services Team",
+    "environment": "production",
+    "data_sensitivity": 4,
+    "confidentiality_lifetime_years": 7,
+    "internet_exposure": false,
+    "business_criticality": "high",
+    "evidence_source": "Git Repository Scan",
+    "scan_status": "pending",
+    "remediation_status": "needs_review"
+  }
+]
