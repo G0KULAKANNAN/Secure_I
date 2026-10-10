@@ -1,6 +1,7 @@
 """
 Finding Domain Model and Stable Fingerprinting.
-Represents a cryptographic vulnerability or observation with sanitized evidence and PQC recommendations.
+Represents a cryptographic vulnerability or observation with sanitized evidence,
+contextual evidence classification, explainable risk score, and PQC recommendations.
 """
 
 from dataclasses import dataclass
@@ -27,11 +28,11 @@ class Finding:
     asset_id: str = ""
     scan_run_id: Optional[str] = None
     job_id: Optional[str] = None
-    scanner_type: str = "certificate_scan"
+    scanner_type: str = "system_scan"
     algorithm: str = "RSA-2048"
-    cryptographic_primitive: str = "digital_signature"
+    cryptographic_primitive: str = "key_establishment"
     quantum_vulnerable: bool = True
-    recommended_pqc: str = "ML-DSA-65"
+    recommended_pqc: str = "ML-KEM-768"
     rule_id: str = "CRYPTO-RSA-2048"
     title: str = "Quantum-Vulnerable RSA Key Detected"
     description: str = ""
@@ -44,6 +45,31 @@ class Finding:
     fingerprint: str = ""
     created_at: str = ""
     updated_at: str = ""
+
+    # Contextual Classification & Evidence Category
+    detection_category: str = "Confirmed cryptographic API usage"
+
+    # Explainable Risk Scoring Factors (1 to 5)
+    data_sensitivity: Optional[int] = None
+    exposure: Optional[int] = None
+    confidentiality_lifetime: Optional[int] = None
+    risk_score: Optional[int] = None
+    risk_category: str = "Needs Assessment"
+    model_version: str = "QS-PRIORITY-V1"
+    score_rationale: str = ""
+
+    # Remediation Action & Priority
+    recommended_action: str = ""
+    migration_approach: str = ""
+    queue_group: str = "needs_assessment"
+    queue_rank: Optional[int] = None
+
+    # Governance & Ownership
+    assigned_owner: Optional[str] = None
+    target_remediation_date: Optional[str] = None
+    assessment_status: str = "needs_assessment"
+    assessed_at: Optional[str] = None
+    assessed_by: Optional[str] = None
 
     def __post_init__(self):
         if not self.id:
@@ -81,6 +107,24 @@ class Finding:
             "fingerprint": self.fingerprint,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            # Risk & Classification Fields
+            "detection_category": self.detection_category,
+            "data_sensitivity": self.data_sensitivity,
+            "exposure": self.exposure,
+            "confidentiality_lifetime": self.confidentiality_lifetime,
+            "risk_score": self.risk_score,
+            "risk_category": self.risk_category,
+            "model_version": self.model_version,
+            "score_rationale": self.score_rationale,
+            "recommended_action": self.recommended_action,
+            "migration_approach": self.migration_approach,
+            "queue_group": self.queue_group,
+            "queue_rank": self.queue_rank,
+            "assigned_owner": self.assigned_owner,
+            "target_remediation_date": self.target_remediation_date,
+            "assessment_status": self.assessment_status,
+            "assessed_at": self.assessed_at,
+            "assessed_by": self.assessed_by,
         }
 
     @classmethod
@@ -91,7 +135,7 @@ class Finding:
             asset_id=data.get("asset_id", ""),
             scan_run_id=data.get("scan_run_id"),
             job_id=data.get("job_id"),
-            scanner_type=data.get("scanner_type", "certificate_scan"),
+            scanner_type=data.get("scanner_type", "system_scan"),
             algorithm=data.get("algorithm", "Unknown"),
             cryptographic_primitive=data.get("cryptographic_primitive", "key_establishment"),
             quantum_vulnerable=bool(data.get("quantum_vulnerable", True)),
@@ -108,4 +152,22 @@ class Finding:
             fingerprint=data.get("fingerprint", ""),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
+            # Risk & Classification Fields
+            detection_category=data.get("detection_category", "Confirmed cryptographic API usage"),
+            data_sensitivity=data.get("data_sensitivity"),
+            exposure=data.get("exposure"),
+            confidentiality_lifetime=data.get("confidentiality_lifetime"),
+            risk_score=data.get("risk_score"),
+            risk_category=data.get("risk_category", "Needs Assessment"),
+            model_version=data.get("model_version", "QS-PRIORITY-V1"),
+            score_rationale=data.get("score_rationale", ""),
+            recommended_action=data.get("recommended_action", ""),
+            migration_approach=data.get("migration_approach", ""),
+            queue_group=data.get("queue_group", "needs_assessment"),
+            queue_rank=data.get("queue_rank"),
+            assigned_owner=data.get("assigned_owner"),
+            target_remediation_date=data.get("target_remediation_date"),
+            assessment_status=data.get("assessment_status", "needs_assessment"),
+            assessed_at=data.get("assessed_at"),
+            assessed_by=data.get("assessed_by"),
         )

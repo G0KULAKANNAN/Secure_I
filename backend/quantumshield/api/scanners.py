@@ -334,3 +334,146 @@ def scan_live_server():
         "findings": saved_findings,
     }), 200
 
+
+# -------------------------------------------------------------
+# GET /api/v1/scanners/system/config & GET /api/scanners/system/config
+# -------------------------------------------------------------
+@scanners_bp.route("/api/v1/scanners/system/config", methods=["GET"])
+@scanners_bp.route("/api/scanners/system/config", methods=["GET"])
+def get_system_scan_config():
+    """Return default and recommended configuration for system file scanner."""
+    from pathlib import Path
+    from quantumshield.scanner.system_file_scanner import (
+        DEFAULT_MAX_FILE_SIZE_BYTES,
+        DEFAULT_MAX_FILES_TO_SCAN,
+        DEFAULT_EXCLUDED_DIRS,
+        DEFAULT_SUPPORTED_EXTENSIONS,
+    )
+    
+    # Project root
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+    
+    return jsonify({
+        "status": "ok",
+        "config": {
+            "default_scope": "project",
+            "project_root": str(project_root),
+            "max_file_size_bytes": DEFAULT_MAX_FILE_SIZE_BYTES,
+            "max_file_size_mb": DEFAULT_MAX_FILE_SIZE_BYTES // (1024 * 1024),
+            "max_files_to_scan": DEFAULT_MAX_FILES_TO_SCAN,
+            "supported_extensions": sorted(list(DEFAULT_SUPPORTED_EXTENSIONS)),
+            "excluded_directories": sorted(list(DEFAULT_EXCLUDED_DIRS)),
+            "safety_model": {
+                "read_only": True,
+                "secret_redaction": True,
+                "symlink_protection": True,
+                "private_keys_protected": True,
+            },
+        },
+    }), 200
+
+
+# -------------------------------------------------------------
+# POST /api/v1/scanners/system & POST /api/scanners/system
+# -------------------------------------------------------------
+@scanners_bp.route("/api/v1/scanners/system", methods=["POST"])
+@scanners_bp.route("/api/scanners/system", methods=["POST"])
+def scan_system_files():
+    """
+    Start automatic recursive system file scan on authorized scope.
+    Runs as a persistent background job with live progress reporting.
+    """
+    from pathlib import Path
+    from quantumshield.scanner.system_file_scanner import DEFAULT_MAX_FILE_SIZE_BYTES
+
+    db_path = get_db_path()
+    asset_repo = AssetRepository(db_path)
+    job_repo = JobRepository(db_path)
+
+    data = request.get_json(silent=True) or {}
+    scope_type = data.get("target_scope", "project")
+    target_directory = data.get("target_directory")
+    asset_id = data.get("asset_id")
+
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+
+    # Determine authorized path
+    if scope_type == "project" or not target_directory:
+        scan_dir = str(project_root)
+    else:
+        # Validate target directory
+        p = Path(target_directory).resolve()
+        if not p.exists() or not p.is_dir():
+            raise ValidationError(f"Target directory '{target_directory}' does not exist or is not a directory.")
+        scan_dir = str(p)
+
+    # Resolve or create target asset
+    target_asset = None
+    if asset_id:
+        target_asset = asset_repo.get_by_id(asset_id)
+        if not target_asset:
+            raise NotFoundError(f"Target asset '{asset_id}' not found.")
+    else:
+        # Look for existing system file asset or create
+        assets, _ = asset_repo.list_assets(search="System Project Files", limit=1)
+        if assets:
+            target_asset = assets[0]
+        else:
+            target_asset = Asset(
+                id="system_files",
+                name="System Project Files",
+                asset_type="application",
+                environment="production",
+                description="Automatic system filesystem cryptographic discovery scope",
+                criticality="high",
+            )
+            try:
+                target_asset = asset_repo.create(target_asset)
+            except Exception:
+                target_asset = asset_repo.get_by_id("system_files") or target_asset
+
+    # Build job payload
+    payload = {
+        "target_directory": scan_dir,
+        "max_file_size_bytes": data.get("max_file_size_bytes", DEFAULT_MAX_FILE_SIZE_BYTES),
+        "include_extensions": data.get("include_extensions"),
+        "exclude_directories": data.get("exclude_directories"),
+        "scan_scope_type": scope_type,
+    }
+
+    # Create job in Job Center
+    job = ScanJob(
+        job_type="system_scan",
+        asset_id=target_asset.id,
+        operation=f"system_scan_{Path(scan_dir).name}",
+        priority=8,
+        status="queued",
+        payload_json=payload,
+    )
+
+    job_manager = current_app.extensions.get("job_manager")
+    if job_manager:
+        job = job_manager.enqueue(job)
+    else:
+        job = job_repo.create(job)
+        # In testing or single-thread mode without workers, execute synchronously
+        if current_app.config.get("TESTING", False):
+            from quantumshield.services.job_worker import BackgroundJobManager
+            temp_worker = BackgroundJobManager(db_path, max_workers=1)
+            try:
+                temp_worker._handle_system_scan(job)
+                job = job_repo.get_by_id(job.id) or job
+            except Exception as exc:
+                job.status = "failed"
+                job.error_message = str(exc)
+                job_repo.update(job)
+
+    return jsonify({
+        "status": "ok",
+        "message": "Automatic system file scan enqueued successfully.",
+        "job_id": job.id,
+        "asset_id": target_asset.id,
+        "scope": scan_dir,
+        "job": job.to_dict(),
+    }), 201
+

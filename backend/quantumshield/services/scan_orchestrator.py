@@ -22,6 +22,7 @@ SUPPORTED_SCANNERS = {
     "certificate_scan",
     "static_scan",
     "tls_scan",
+    "system_scan",
 }
 
 
@@ -158,6 +159,16 @@ class ScanOrchestrator:
                             line_number=f_dict.get("line_number"),
                             confidence=f_dict.get("confidence", "high"),
                             remediation_status=f_dict.get("remediation_status", "potential_exposure"),
+                            detection_category=f_dict.get("detection_category", "Confirmed cryptographic API usage"),
+                            data_sensitivity=f_dict.get("data_sensitivity"),
+                            exposure=f_dict.get("exposure"),
+                            confidentiality_lifetime=f_dict.get("confidentiality_lifetime"),
+                            risk_score=f_dict.get("risk_score"),
+                            risk_category=f_dict.get("risk_category", "Needs Assessment"),
+                            score_rationale=f_dict.get("score_rationale", ""),
+                            recommended_action=f_dict.get("recommended_action", ""),
+                            migration_approach=f_dict.get("migration_approach", ""),
+                            queue_group=f_dict.get("queue_group", "needs_assessment"),
                         )
                         self.finding_repo.save_finding(finding)
                         total_findings_count += 1

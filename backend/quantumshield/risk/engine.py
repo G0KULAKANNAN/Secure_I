@@ -1,38 +1,160 @@
 """
 Explainable Risk Assessment Scoring Engine.
-Calculates deterministic cryptographic exposure priority using transparent mathematical weighting:
-    R = 20 * (0.35C + 0.30S + 0.25L + 0.10E)
-Unscanned assets receive 'Needs assessment' rather than artificially low risk.
+Implements the QuantumShield Project Risk-Prioritization Model for both individual findings
+and aggregated inventory assets using transparent mathematical formulas.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
+from pathlib import Path
 from quantumshield.models.asset import Asset
 from quantumshield.models.finding import Finding
 from quantumshield.storage.repositories import AssetRepository
 from quantumshield.storage.finding_repository import FindingRepository
 from quantumshield.storage.scan_repository import ScanRepository
+from quantumshield.risk.recommendations import generate_finding_recommendation
+
+
+# Configurable Model Metadata & Thresholds
+MODEL_VERSION = "QS-PRIORITY-V1"
+MODEL_DISCLAIMER = "QuantumShield Project Risk-Prioritization Model (Non-NIST / Operational Engineering Guidance)"
+
+SCORE_THRESHOLDS = {
+    "low": (0, 29),
+    "moderate": (30, 49),
+    "high": (50, 74),
+    "critical": (75, 100),
+}
+
+
+def calculate_finding_risk_score(
+    sensitivity: Optional[int],
+    exposure: Optional[int],
+    lifetime: Optional[int],
+) -> Tuple[Optional[int], str, str]:
+    """
+    Calculate explainable risk score:
+        Risk Score = round(((S + E + L) / 15) * 100)
+    
+    Returns:
+        (score, category, rationale)
+    If any factor is missing (None), returns (None, 'Needs Assessment', rationale).
+    """
+    if sensitivity is None or exposure is None or lifetime is None:
+        missing = []
+        if sensitivity is None:
+            missing.append("Data Sensitivity (S: 1-5)")
+        if exposure is None:
+            missing.append("Exposure (E: 1-5)")
+        if lifetime is None:
+            missing.append("Confidentiality Lifetime (L: 1-5)")
+        
+        rationale = (
+            f"Needs Assessment: Missing required factor(s) [{', '.join(missing)}]. "
+            "QuantumShield does not invent business context. Please provide all three factors to calculate an explainable risk score."
+        )
+        return None, "Needs Assessment", rationale
+
+    # Validate factor bounds 1 to 5
+    try:
+        s = max(1, min(5, int(sensitivity)))
+        e = max(1, min(5, int(exposure)))
+        l = max(1, min(5, int(lifetime)))
+    except (ValueError, TypeError):
+        return None, "Needs Assessment", "Invalid factor values. Each factor must be an integer from 1 to 5."
+
+    # Formula: ((S + E + L) / 15) * 100
+    raw_score = ((s + e + l) / 15.0) * 100.0
+    score = int(round(raw_score))
+
+    # Determine risk category
+    if score >= SCORE_THRESHOLDS["critical"][0]:
+        category = "Critical"
+    elif score >= SCORE_THRESHOLDS["high"][0]:
+        category = "High"
+    elif score >= SCORE_THRESHOLDS["moderate"][0]:
+        category = "Moderate"
+    else:
+        category = "Low"
+
+    rationale = (
+        f"Score {score}/100 ({category}) calculated using {MODEL_VERSION}: "
+        f"round((({s} + {e} + {l}) / 15) * 100). "
+        f"Factors: Data Sensitivity={s}/5, Exposure={e}/5, Confidentiality Lifetime={l}/5."
+    )
+
+    return score, category, rationale
 
 
 class RiskEngine:
     """Deterministic, transparent risk evaluation engine."""
 
-    def __init__(self, db_path):
+    def __init__(self, db_path: Union[str, Path]):
         self.db_path = db_path
         self.asset_repo = AssetRepository(db_path)
         self.finding_repo = FindingRepository(db_path)
         self.scan_repo = ScanRepository(db_path)
 
+    # -------------------------------------------------------------
+    # Finding-Level Explainable Risk Assessment
+    # -------------------------------------------------------------
+    def assess_finding(
+        self,
+        finding: Finding,
+        sensitivity_override: Optional[int] = None,
+        exposure_override: Optional[int] = None,
+        lifetime_override: Optional[int] = None,
+    ) -> Finding:
+        """
+        Evaluate explainable risk score, category, and purpose-specific recommendations
+        for an individual finding.
+        """
+        s = sensitivity_override if sensitivity_override is not None else finding.data_sensitivity
+        e = exposure_override if exposure_override is not None else finding.exposure
+        l = lifetime_override if lifetime_override is not None else finding.confidentiality_lifetime
+
+        score, category, rationale = calculate_finding_risk_score(s, e, l)
+
+        finding.data_sensitivity = s
+        finding.exposure = e
+        finding.confidentiality_lifetime = l
+        finding.risk_score = score
+        finding.risk_category = category
+        finding.score_rationale = rationale
+        finding.model_version = MODEL_VERSION
+        finding.assessment_status = "assessed" if score is not None else "needs_assessment"
+
+        # Generate recommendation and queue grouping
+        rec = generate_finding_recommendation(
+            algorithm=finding.algorithm,
+            primitive=finding.cryptographic_primitive,
+            quantum_vulnerable=finding.quantum_vulnerable,
+            risk_score=score,
+            risk_category=category,
+            sensitivity=s,
+            exposure=e,
+            lifetime=l,
+            detection_category=finding.detection_category,
+            file_path=finding.file_path,
+        )
+
+        finding.recommended_action = rec["recommended_action"]
+        finding.migration_approach = rec["migration_approach"]
+        finding.queue_group = rec["queue_group"]
+
+        return finding
+
+    # -------------------------------------------------------------
+    # Asset-Level Explainable Risk Assessment (Preserved for compatibility)
+    # -------------------------------------------------------------
     def assess_asset(self, asset_id: str) -> Dict[str, Any]:
         """Calculate explainable risk score for an asset."""
         asset = self.asset_repo.get_by_id(asset_id)
         if not asset:
             raise ValueError(f"Asset '{asset_id}' not found.")
 
-        # Check if asset has been scanned
-        scan_runs, total_runs = self.scan_repo.list_scan_runs(asset_id=asset_id, status="completed", limit=1)
         findings, total_findings = self.finding_repo.list_findings(asset_id=asset_id, limit=100)
 
-        if total_runs == 0 and total_findings == 0:
+        if total_findings == 0:
             return {
                 "asset_id": asset.id,
                 "asset_name": asset.name,
@@ -111,7 +233,6 @@ class RiskEngine:
 
     def _calculate_crypto_exposure(self, findings: List[Finding]) -> Tuple[int, str]:
         """Evaluate cryptographic exposure factor C (1 to 5)."""
-        from typing import Tuple
         if not findings:
             return 1, "No cryptographic vulnerabilities detected (C=1)"
 

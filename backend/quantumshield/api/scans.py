@@ -172,6 +172,12 @@ def list_findings():
     severity = request.args.get("severity")
     scanner_type = request.args.get("scanner_type")
     status = request.args.get("status")
+    risk_category = request.args.get("risk_category")
+    algorithm = request.args.get("algorithm")
+    assigned_owner = request.args.get("owner") or request.args.get("assigned_owner")
+    queue_group = request.args.get("queue_group")
+    sort_by = request.args.get("sort_by", "risk_score")
+    order = request.args.get("order", "desc")
 
     try:
         limit = int(request.args.get("limit", 50))
@@ -185,6 +191,12 @@ def list_findings():
         severity=severity,
         scanner_type=scanner_type,
         status=status,
+        risk_category=risk_category,
+        algorithm=algorithm,
+        assigned_owner=assigned_owner,
+        queue_group=queue_group,
+        sort_by=sort_by,
+        order=order,
         limit=limit,
         offset=offset,
     )
@@ -195,6 +207,21 @@ def list_findings():
         "total": total,
         "limit": limit,
         "offset": offset,
+    }), 200
+
+
+# -------------------------------------------------------------
+# GET /api/v1/findings/queue & GET /api/findings/queue
+# -------------------------------------------------------------
+@scans_bp.route("/api/v1/findings/queue", methods=["GET"])
+@scans_bp.route("/api/findings/queue", methods=["GET"])
+def get_remediation_queue():
+    """Return Monday Morning Remediation Queue grouped into 4 actionable tiers."""
+    repo = get_finding_repo()
+    queue_data = repo.get_remediation_queue()
+    return jsonify({
+        "status": "ok",
+        "queue": queue_data,
     }), 200
 
 
@@ -216,6 +243,46 @@ def get_finding(finding_id: str):
 
 
 # -------------------------------------------------------------
+# POST /api/v1/findings/<finding_id>/assess & POST /api/findings/<finding_id>/assess
+# -------------------------------------------------------------
+@scans_bp.route("/api/v1/findings/<finding_id>/assess", methods=["POST"])
+@scans_bp.route("/api/findings/<finding_id>/assess", methods=["POST"])
+def assess_finding(finding_id: str):
+    """
+    Submit risk assessment factors (S, E, L), assign owner, and set target date.
+    Recalculates explainable risk score and records audit event.
+    """
+    data = request.get_json(silent=True) or {}
+    sensitivity = data.get("data_sensitivity")
+    exposure = data.get("exposure")
+    lifetime = data.get("confidentiality_lifetime")
+    assigned_owner = data.get("assigned_owner")
+    target_date = data.get("target_remediation_date")
+    status = data.get("remediation_status")
+    operator = data.get("operator", "security_engineer")
+
+    repo = get_finding_repo()
+    updated = repo.update_assessment(
+        finding_id=finding_id,
+        sensitivity=sensitivity,
+        exposure=exposure,
+        lifetime=lifetime,
+        assigned_owner=assigned_owner,
+        target_remediation_date=target_date,
+        remediation_status=status,
+        operator=operator,
+    )
+    if not updated:
+        raise NotFoundError(f"Finding with ID '{finding_id}' not found.")
+
+    return jsonify({
+        "status": "ok",
+        "message": f"Finding '{finding_id}' risk assessment updated successfully.",
+        "finding": updated.to_dict(),
+    }), 200
+
+
+# -------------------------------------------------------------
 # PATCH /api/v1/findings/<finding_id> & PATCH /api/findings/<finding_id>
 # -------------------------------------------------------------
 @scans_bp.route("/api/v1/findings/<finding_id>", methods=["PATCH"])
@@ -223,21 +290,35 @@ def get_finding(finding_id: str):
 def update_finding_status(finding_id: str):
     data = request.get_json(silent=True) or {}
     new_status = data.get("remediation_status") or data.get("status")
-    if not new_status:
-        raise ValidationError("Field 'remediation_status' is required.")
-
-    valid_statuses = {"potential_exposure", "verified_usage", "needs_review", "remediated", "accepted_risk"}
-    if new_status.lower() not in valid_statuses:
-        raise ValidationError(f"Invalid remediation status. Must be one of: {', '.join(sorted(valid_statuses))}")
-
+    
+    # Check if assessment factor fields are also being updated
+    has_factors = any(k in data for k in ("data_sensitivity", "exposure", "confidentiality_lifetime", "assigned_owner", "target_remediation_date"))
+    
     repo = get_finding_repo()
-    updated = repo.update_status(finding_id, new_status)
+    if has_factors:
+        updated = repo.update_assessment(
+            finding_id=finding_id,
+            sensitivity=data.get("data_sensitivity"),
+            exposure=data.get("exposure"),
+            lifetime=data.get("confidentiality_lifetime"),
+            assigned_owner=data.get("assigned_owner"),
+            target_remediation_date=data.get("target_remediation_date"),
+            remediation_status=new_status,
+        )
+    elif new_status:
+        valid_statuses = {"potential_exposure", "verified_usage", "needs_review", "remediated", "accepted_risk"}
+        if new_status.lower() not in valid_statuses:
+            raise ValidationError(f"Invalid remediation status. Must be one of: {', '.join(sorted(valid_statuses))}")
+        updated = repo.update_status(finding_id, new_status)
+    else:
+        raise ValidationError("Field 'remediation_status' or assessment factors required.")
+
     if not updated:
         raise NotFoundError(f"Finding with ID '{finding_id}' not found.")
 
     return jsonify({
         "status": "ok",
-        "message": f"Finding status updated to '{new_status}'.",
+        "message": "Finding updated successfully.",
         "finding": updated.to_dict(),
     }), 200
 

@@ -170,6 +170,24 @@ export interface Finding {
   fingerprint: string;
   created_at: string;
   updated_at: string;
+  // Risk & Detection Classification
+  detection_category?: string;
+  data_sensitivity?: number | null;
+  exposure?: number | null;
+  confidentiality_lifetime?: number | null;
+  risk_score?: number | null;
+  risk_category?: string;
+  model_version?: string;
+  score_rationale?: string;
+  recommended_action?: string;
+  migration_approach?: string;
+  queue_group?: string;
+  queue_rank?: number | null;
+  assigned_owner?: string | null;
+  target_remediation_date?: string | null;
+  assessment_status?: string;
+  assessed_at?: string | null;
+  assessed_by?: string | null;
 }
 
 export interface FindingListResponse {
@@ -188,11 +206,122 @@ export interface FindingStats {
   medium: number;
   low: number;
   quantum_vulnerable: number;
+  risk_critical?: number;
+  risk_high?: number;
+  risk_moderate?: number;
+  risk_low?: number;
+  needs_assessment?: number;
+  overdue_remediations?: number;
 }
 
 export interface FindingStatsResponse {
   status: string;
   stats: FindingStats;
+}
+
+export interface RemediationQueueItem {
+  priority_rank: number;
+  finding_id: string;
+  title: string;
+  asset_id: string;
+  algorithm: string;
+  cryptographic_primitive: string;
+  detection_category?: string;
+  risk_score?: number | null;
+  risk_category?: string;
+  file_path?: string | null;
+  line_number?: number | null;
+  why_now: string;
+  first_concrete_action: string;
+  required_validation: string;
+  assigned_owner?: string | null;
+  target_remediation_date?: string | null;
+  remediation_status: string;
+  factors?: {
+    sensitivity?: number | null;
+    exposure?: number | null;
+    lifetime?: number | null;
+  };
+}
+
+export interface RemediationTier {
+  title: string;
+  count: number;
+  items: RemediationQueueItem[];
+}
+
+export interface RemediationQueueData {
+  total_items: number;
+  tiers: {
+    immediate_investigation: RemediationTier;
+    high_priority_migration: RemediationTier;
+    scheduled_remediation: RemediationTier;
+    monitoring_reassessment: RemediationTier;
+    needs_assessment: RemediationTier;
+  };
+}
+
+export interface RemediationQueueResponse {
+  status: string;
+  queue: RemediationQueueData;
+}
+
+export interface SystemScanConfig {
+  default_scope: string;
+  project_root: string;
+  max_file_size_bytes: number;
+  max_file_size_mb: number;
+  max_files_to_scan: number;
+  supported_extensions: string[];
+  excluded_directories: string[];
+  safety_model: {
+    read_only: boolean;
+    secret_redaction: boolean;
+    symlink_protection: boolean;
+    private_keys_protected: boolean;
+  };
+}
+
+export interface SystemScanConfigResponse {
+  status: string;
+  config: SystemScanConfig;
+}
+
+export interface SystemScanResponse {
+  status: string;
+  message: string;
+  job_id: string;
+  asset_id: string;
+  scope: string;
+  job: ScanJob;
+}
+
+export interface RiskFormulaMetadata {
+  status: string;
+  model_version: string;
+  disclaimer: string;
+  formula: string;
+  scale: string;
+  thresholds: Record<string, [number, number]>;
+  factors: Record<string, {
+    name: string;
+    scale: string;
+    levels: Record<string, string>;
+  }>;
+}
+
+export interface RiskCalculateResponse {
+  status: string;
+  risk_score: number | null;
+  risk_category: string;
+  score_rationale: string;
+  model_version: string;
+  disclaimer: string;
+  factors: {
+    sensitivity?: number;
+    exposure?: number;
+    lifetime?: number;
+  };
 }
 
 export interface DirectScanResponse {

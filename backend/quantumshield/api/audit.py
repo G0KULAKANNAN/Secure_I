@@ -13,6 +13,8 @@ def get_audit_repo() -> AuditRepository:
     return AuditRepository(db_path)
 
 
+@audit_bp.route("/api/v1/audit", methods=["GET"])
+@audit_bp.route("/api/audit", methods=["GET"])
 @audit_bp.route("/api/v1/audit/events", methods=["GET"])
 @audit_bp.route("/api/audit/events", methods=["GET"])
 def list_audit_events():

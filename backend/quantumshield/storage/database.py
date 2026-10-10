@@ -155,6 +155,23 @@ def init_db(db_path: Union[str, Path]) -> None:
                 confidence TEXT NOT NULL DEFAULT 'high',
                 remediation_status TEXT NOT NULL DEFAULT 'potential_exposure',
                 fingerprint TEXT NOT NULL,
+                detection_category TEXT NOT NULL DEFAULT 'Confirmed cryptographic API usage',
+                data_sensitivity INTEGER,
+                exposure INTEGER,
+                confidentiality_lifetime INTEGER,
+                risk_score INTEGER,
+                risk_category TEXT NOT NULL DEFAULT 'Needs Assessment',
+                model_version TEXT NOT NULL DEFAULT 'QS-PRIORITY-V1',
+                score_rationale TEXT,
+                recommended_action TEXT,
+                migration_approach TEXT,
+                queue_group TEXT NOT NULL DEFAULT 'needs_assessment',
+                queue_rank INTEGER,
+                assigned_owner TEXT,
+                target_remediation_date TEXT,
+                assessment_status TEXT NOT NULL DEFAULT 'needs_assessment',
+                assessed_at TEXT,
+                assessed_by TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
@@ -168,11 +185,41 @@ def init_db(db_path: Union[str, Path]) -> None:
             );
         """)
 
+        # Idempotent column migration for existing databases
+        cursor = conn.execute("PRAGMA table_info(findings);")
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+        
+        column_defs = [
+            ("detection_category", "TEXT DEFAULT 'Confirmed cryptographic API usage'"),
+            ("data_sensitivity", "INTEGER"),
+            ("exposure", "INTEGER"),
+            ("confidentiality_lifetime", "INTEGER"),
+            ("risk_score", "INTEGER"),
+            ("risk_category", "TEXT DEFAULT 'Needs Assessment'"),
+            ("model_version", "TEXT DEFAULT 'QS-PRIORITY-V1'"),
+            ("score_rationale", "TEXT"),
+            ("recommended_action", "TEXT"),
+            ("migration_approach", "TEXT"),
+            ("queue_group", "TEXT DEFAULT 'needs_assessment'"),
+            ("queue_rank", "INTEGER"),
+            ("assigned_owner", "TEXT"),
+            ("target_remediation_date", "TEXT"),
+            ("assessment_status", "TEXT DEFAULT 'needs_assessment'"),
+            ("assessed_at", "TEXT"),
+            ("assessed_by", "TEXT"),
+        ]
+        for col_name, col_type in column_defs:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE findings ADD COLUMN {col_name} {col_type};")
+
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_asset_id ON findings (asset_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings (severity);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_fingerprint ON findings (fingerprint);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scanner_type ON findings (scanner_type);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_scan_run_id ON findings (scan_run_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_risk_score ON findings (risk_score);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_risk_category ON findings (risk_category);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_queue_group ON findings (queue_group);")
 
         # -------------------------------------------------------------
         # Stage 2: Audit Trail & Hybrid Cryptography in Staging Tables

@@ -1,26 +1,72 @@
-import React, { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-  Code,
-  Globe,
-  Upload,
+  FolderSearch,
   Play,
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  FileText,
-  ShieldCheck,
+  ShieldAlert,
   ArrowRight,
-  Info,
   Loader2,
-  KeyRound,
+  FolderTree,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
   FileCode,
+  Globe,
+  Upload,
+  RefreshCw,
+  StopCircle,
+  FileSearch,
+  ShieldCheck,
+  HardDrive,
 } from 'lucide-react';
-import { scanSourceCode, scanLiveServer } from '../api/scans';
-import { Finding } from '../types';
+import {
+  startSystemScan,
+  fetchSystemScanConfig,
+  scanSourceCode,
+  scanLiveServer,
+} from '../api/scans';
+import { getJob, cancelJob } from '../api/jobs';
+import { Finding, SystemScanConfig, ScanJob } from '../types';
 
 export const Scanner: React.FC = () => {
-  // Source Code Scanner State
+  const navigate = useNavigate();
+
+  // -------------------------------------------------------------
+  // Automatic System File Scanner State
+  // -------------------------------------------------------------
+  const [scanConfig, setScanConfig] = useState<SystemScanConfig | null>(null);
+  const [scopeType, setScopeType] = useState<'project' | 'custom'>('project');
+  const [customPath, setCustomPath] = useState<string>('');
+  const [maxSizeMb, setMaxSizeMb] = useState<number>(5);
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState<boolean>(false);
+  const [activeJob, setActiveJob] = useState<ScanJob | null>(null);
+  const [systemScanning, setSystemScanning] = useState<boolean>(false);
+  const [systemError, setSystemError] = useState<string | null>(null);
+  const [systemSuccess, setSystemSuccess] = useState<boolean>(false);
+  const [telemetry, setTelemetry] = useState<{
+    files_discovered: number;
+    files_scanned: number;
+    files_skipped: number;
+    files_errored: number;
+    findings_count: number;
+  }>({
+    files_discovered: 0,
+    files_scanned: 0,
+    files_skipped: 0,
+    files_errored: 0,
+    findings_count: 0,
+  });
+
+  // Polling ref
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // -------------------------------------------------------------
+  // Manual Scanners State (Source upload & TLS probe)
+  // -------------------------------------------------------------
+  const [manualSectionOpen, setManualSectionOpen] = useState<boolean>(false);
   const [sourceMode, setSourceMode] = useState<'upload' | 'paste'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceCodeText, setSourceCodeText] = useState<string>('');
@@ -29,10 +75,8 @@ export const Scanner: React.FC = () => {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceSuccess, setSourceSuccess] = useState<boolean>(false);
   const [sourceFindings, setSourceFindings] = useState<Finding[]>([]);
-  const [dragOver, setDragOver] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Live Server Scanner State
   const [hostname, setHostname] = useState<string>('');
   const [port, setPort] = useState<number>(443);
   const [authorized, setAuthorized] = useState<boolean>(false);
@@ -40,25 +84,112 @@ export const Scanner: React.FC = () => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<boolean>(false);
   const [serverFindings, setServerFindings] = useState<Finding[]>([]);
-  const [tlsMetadata, setTlsMetadata] = useState<Record<string, any> | null>(null);
 
-  // Handlers for Source Code Scan
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-      setSourceError(null);
+  // Load config on mount
+  useEffect(() => {
+    fetchSystemScanConfig()
+      .then((cfg) => {
+        setScanConfig(cfg);
+        setCustomPath(cfg.project_root || '');
+        setMaxSizeMb(cfg.max_file_size_mb || 5);
+      })
+      .catch((err) => console.error('Failed to load scan config:', err));
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
+
+  // Poll active background job
+  const pollJobStatus = (jobId: string) => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+
+    pollTimerRef.current = setInterval(async () => {
+      try {
+        const job = await getJob(jobId);
+        setActiveJob(job);
+
+        // Update telemetry from result_json if available
+        if (job.result_json) {
+          const res = job.result_json;
+          if (res.telemetry) {
+            setTelemetry(res.telemetry);
+          } else if (res.metadata) {
+            setTelemetry({
+              files_discovered: res.metadata.files_discovered || 0,
+              files_scanned: res.metadata.files_scanned || 0,
+              files_skipped: res.metadata.files_skipped || 0,
+              files_errored: res.metadata.files_errored || 0,
+              findings_count: res.metadata.findings_count || (res.findings?.length || 0),
+            });
+          }
+        }
+
+        if (job.status === 'completed') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setSystemScanning(false);
+          setSystemSuccess(true);
+        } else if (job.status === 'failed' || job.status === 'cancelled') {
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          setSystemScanning(false);
+          if (job.status === 'failed') {
+            setSystemError(job.error_message || 'System file scan encountered an error.');
+          }
+        }
+      } catch (err: any) {
+        console.error('Job polling error:', err);
+      }
+    }, 1500);
+  };
+
+  // -------------------------------------------------------------
+  // Handler: Start One-Click System Scan
+  // -------------------------------------------------------------
+  const handleStartSystemScan = async () => {
+    setSystemError(null);
+    setSystemSuccess(false);
+    setTelemetry({
+      files_discovered: 0,
+      files_scanned: 0,
+      files_skipped: 0,
+      files_errored: 0,
+      findings_count: 0,
+    });
+
+    const targetDir = scopeType === 'custom' && customPath.trim() ? customPath.trim() : scanConfig?.project_root;
+
+    setSystemScanning(true);
+    try {
+      const res = await startSystemScan({
+        target_scope: scopeType,
+        target_directory: targetDir,
+        max_file_size_bytes: maxSizeMb * 1024 * 1024,
+      });
+
+      setActiveJob(res.job);
+      pollJobStatus(res.job_id);
+    } catch (err: any) {
+      setSystemError(err.message || 'Failed to start system file scan.');
+      setSystemScanning(false);
     }
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
-      setSourceError(null);
+  // Handler: Cancel Active Scan
+  const handleCancelScan = async () => {
+    if (!activeJob) return;
+    try {
+      await cancelJob(activeJob.id);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      setSystemScanning(false);
+      setActiveJob((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
+    } catch (err: any) {
+      console.error('Failed to cancel job:', err);
     }
   };
 
+  // -------------------------------------------------------------
+  // Handlers for Manual Single-File / TLS Scans
+  // -------------------------------------------------------------
   const handleRunSourceScan = async () => {
     setSourceError(null);
     setSourceSuccess(false);
@@ -89,11 +220,9 @@ export const Scanner: React.FC = () => {
     }
   };
 
-  // Handlers for Live Server Scan
   const handleRunServerScan = async () => {
     setServerError(null);
     setServerSuccess(false);
-    setTlsMetadata(null);
 
     if (!hostname.trim()) {
       setServerError('Please provide a target hostname or IP address.');
@@ -113,7 +242,6 @@ export const Scanner: React.FC = () => {
       });
 
       setServerFindings(res.findings || []);
-      setTlsMetadata(res.scan_result?.metadata || null);
       setServerSuccess(true);
     } catch (err: any) {
       setServerError(err.message || 'Failed to inspect server TLS handshake.');
@@ -125,397 +253,441 @@ export const Scanner: React.FC = () => {
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
       {/* Header Banner */}
-      <div className="border-b border-navy-750 pb-5">
-        <h1 className="text-2xl font-bold text-white tracking-tight">Quantum Security Scanner</h1>
-        <p className="text-sm text-gray-400 mt-1">
-          Scan application code, configurations, and live network servers to discover quantum-vulnerable cryptography (RSA, ECC, classical Diffie-Hellman) and plan NIST PQC migration.
-        </p>
+      <div className="border-b border-navy-750 pb-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2 text-cyan-400 font-mono text-xs uppercase tracking-widest font-semibold mb-1">
+            <ShieldCheck className="w-4 h-4" />
+            <span>Automated Discovery Engine</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Quantum Security Scanner</h1>
+          <p className="text-xs text-gray-400 mt-1 max-w-2xl">
+            Automatically discover cryptographic usage, vulnerable RSA/ECC keys, legacy ciphers, and certificates across authorized project files with real-time risk prioritization.
+          </p>
+        </div>
+
+        <Link
+          to="/findings"
+          className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-navy-850 hover:bg-navy-800 border border-navy-750 text-gray-200 text-xs font-semibold transition"
+        >
+          <FileSearch className="w-4 h-4 text-cyan-400" />
+          <span>View All Findings</span>
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* ========================================================================= */}
-        {/* CARD 1: Scan Source Code & Configurations */}
-        {/* ========================================================================= */}
-        <div className="rounded-2xl bg-navy-850 border border-navy-750 p-6 shadow-xl space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-navy-750">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-                <FileCode className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-white">1. Scan Source Code</h2>
-                <p className="text-xs text-gray-400">Inspect code and configuration files for classical algorithms</p>
-              </div>
+      {/* ========================================================================= */}
+      {/* MAIN COMMAND HERO: AUTOMATIC SYSTEM FILE SCANNER */}
+      {/* ========================================================================= */}
+      <div className="rounded-2xl bg-gradient-to-br from-navy-900 via-navy-850 to-navy-900 border border-cyan-500/30 p-6 md:p-8 shadow-2xl relative overflow-hidden space-y-6">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Header & Status */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-navy-750/80">
+          <div className="flex items-start space-x-4">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 border border-cyan-500/40 text-cyan-300 shadow-lg shadow-cyan-500/10">
+              <FolderSearch className="w-7 h-7" />
             </div>
-            <span className="text-xs font-mono px-2.5 py-1 rounded bg-navy-950 text-cyan-300 border border-navy-800">
-              Safe Static
-            </span>
+            <div>
+              <div className="flex items-center space-x-2.5">
+                <h2 className="text-xl font-bold text-white tracking-tight">Automatic System File Scanner</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  Read-Only Safe
+                </span>
+              </div>
+              <p className="text-xs text-gray-300 mt-1">
+                Recursively scans source code (.py, .java, .js, .ts, .c, .go), configurations (.yaml, .conf), and certificates (.pem, .crt) without manual file-by-file upload.
+              </p>
+            </div>
           </div>
 
-          {/* Mode Switcher (Upload vs Paste) */}
-          <div className="flex rounded-lg bg-navy-950 p-1 border border-navy-800">
-            <button
-              type="button"
-              onClick={() => { setSourceMode('upload'); setSourceError(null); }}
-              className={`flex-1 py-1.5 px-3 text-xs font-medium rounded-md transition ${
-                sourceMode === 'upload'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Upload File
-            </button>
-            <button
-              type="button"
-              onClick={() => { setSourceMode('paste'); setSourceError(null); }}
-              className={`flex-1 py-1.5 px-3 text-xs font-medium rounded-md transition ${
-                sourceMode === 'paste'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Paste Code Snippet
-            </button>
+          {/* Action Button */}
+          <div className="flex items-center space-x-3">
+            {systemScanning ? (
+              <button
+                type="button"
+                onClick={handleCancelScan}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg transition"
+              >
+                <StopCircle className="w-4 h-4" />
+                <span>Cancel Scan</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartSystemScan}
+                className="inline-flex items-center space-x-2.5 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-navy-950 font-bold text-sm shadow-xl shadow-cyan-500/20 transition transform active:scale-95"
+              >
+                <Play className="w-4 h-4 fill-navy-950" />
+                <span>Scan System</span>
+              </button>
+            )}
           </div>
+        </div>
 
-          {sourceMode === 'upload' ? (
-            /* File Upload Dropzone */
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
-                dragOver
-                  ? 'border-cyan-400 bg-cyan-500/10'
-                  : selectedFile
-                  ? 'border-emerald-500/50 bg-emerald-500/5'
-                  : 'border-navy-700 hover:border-cyan-500/40 bg-navy-900/50'
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileChange}
-                accept=".py,.java,.js,.ts,.tsx,.go,.c,.cpp,.cs,.yml,.yaml,.conf,.pem,.crt"
-              />
-              <Upload className={`w-8 h-8 mx-auto mb-2 ${selectedFile ? 'text-emerald-400' : 'text-gray-400'}`} />
-              {selectedFile ? (
-                <div>
-                  <p className="text-sm font-semibold text-emerald-300 font-mono">{selectedFile.name}</p>
-                  <p className="text-xs text-gray-400 mt-1">{(selectedFile.size / 1024).toFixed(1)} KB — Click to choose different file</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-sm font-medium text-gray-200">Drag & drop source or config file here</p>
-                  <p className="text-xs text-gray-400 mt-1">Supports Python, Java, JS/TS, Go, C/C++, YAML, Conf, PEM certificates (Max 2MB)</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Code Paste Area */
-            <div className="space-y-2">
+        {/* Scope Selector & Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div
+            onClick={() => setScopeType('project')}
+            className={`p-4 rounded-xl border cursor-pointer transition flex items-start space-x-3 ${
+              scopeType === 'project'
+                ? 'bg-cyan-500/10 border-cyan-500/50 shadow-md shadow-cyan-500/10'
+                : 'bg-navy-950/70 border-navy-750 hover:bg-navy-900'
+            }`}
+          >
+            <HardDrive className={`w-5 h-5 mt-0.5 ${scopeType === 'project' ? 'text-cyan-400' : 'text-gray-400'}`} />
+            <div>
               <div className="flex items-center space-x-2">
-                <label className="text-xs text-gray-400">File Name / Context:</label>
-                <input
-                  type="text"
-                  value={fileNameInput}
-                  onChange={(e) => setFileNameInput(e.target.value)}
-                  className="flex-1 bg-navy-950 border border-navy-750 rounded px-2.5 py-1 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
-                  placeholder="e.g. auth_service.py or nginx.conf"
-                />
+                <span className="text-sm font-semibold text-white">Project Scope (Default)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  Recommended
+                </span>
               </div>
-              <textarea
-                rows={7}
-                value={sourceCodeText}
-                onChange={(e) => setSourceCodeText(e.target.value)}
-                placeholder="// Paste cryptographic code, key generation, or TLS cipher configuration..."
-                className="w-full bg-navy-950 border border-navy-750 rounded-xl p-3 text-xs text-gray-200 font-mono focus:border-cyan-500 focus:outline-none leading-relaxed resize-y"
-              />
+              <p className="text-[11px] text-gray-400 mt-1 font-mono break-all">
+                {scanConfig?.project_root || 'Current workspace'}
+              </p>
             </div>
-          )}
-
-          {sourceError && (
-            <div className="flex items-center space-x-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              <span>{sourceError}</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-[11px] text-gray-400 flex items-center space-x-1">
-              <Info className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Non-executing static analysis</span>
-            </span>
-
-            <button
-              type="button"
-              disabled={sourceScanning}
-              onClick={handleRunSourceScan}
-              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-navy-950 font-semibold text-xs tracking-wide transition shadow-lg shadow-cyan-500/20"
-            >
-              {sourceScanning ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Scanning Code...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Scan Files</span>
-                </>
-              )}
-            </button>
           </div>
 
-          {/* Results Display */}
-          {sourceSuccess && (
-            <div className="mt-4 pt-4 border-t border-navy-750 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                  Scan Results ({sourceFindings.length} {sourceFindings.length === 1 ? 'Finding' : 'Findings'})
-                </span>
-                <Link to="/findings" className="text-xs text-cyan-400 hover:underline inline-flex items-center space-x-1">
-                  <span>View All in Findings</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-
-              {sourceFindings.length === 0 ? (
-                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center space-x-3 text-xs text-emerald-300">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-400" />
-                  <span>No quantum-vulnerable cryptographic patterns detected in this file.</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border border-navy-750">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-navy-950 text-gray-400 font-mono text-[11px] border-b border-navy-750">
-                      <tr>
-                        <th className="py-2.5 px-3">File : Line</th>
-                        <th className="py-2.5 px-3">Detected Algorithm</th>
-                        <th className="py-2.5 px-3">Evidence</th>
-                        <th className="py-2.5 px-3">Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-navy-750/60 bg-navy-900/60 font-mono text-[11px]">
-                      {sourceFindings.map((f, idx) => (
-                        <tr key={idx} className="hover:bg-navy-800/50">
-                          <td className="py-2.5 px-3 text-gray-300">
-                            {f.file_path || 'snippet'}:{f.line_number || 1}
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold text-amber-300">
-                            {f.algorithm}
-                          </td>
-                          <td className="py-2.5 px-3 text-gray-400 truncate max-w-[180px]" title={f.evidence}>
-                            {f.evidence}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                              Needs verification
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          <div
+            onClick={() => setScopeType('custom')}
+            className={`p-4 rounded-xl border cursor-pointer transition flex items-start space-x-3 ${
+              scopeType === 'custom'
+                ? 'bg-cyan-500/10 border-cyan-500/50 shadow-md shadow-cyan-500/10'
+                : 'bg-navy-950/70 border-navy-750 hover:bg-navy-900'
+            }`}
+          >
+            <FolderTree className={`w-5 h-5 mt-0.5 ${scopeType === 'custom' ? 'text-cyan-400' : 'text-gray-400'}`} />
+            <div className="flex-1">
+              <span className="text-sm font-semibold text-white">Authorized Custom Directory</span>
+              <p className="text-[11px] text-gray-400 mt-0.5">Specify an authorized application folder</p>
             </div>
-          )}
+          </div>
+
+          <div className="p-4 rounded-xl bg-navy-950/70 border border-navy-750 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">File Size Limit:</span>
+              <span className="text-xs font-mono font-bold text-cyan-300">{maxSizeMb} MB</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={maxSizeMb}
+              onChange={(e) => setMaxSizeMb(Number(e.target.value))}
+              className="w-full accent-cyan-400 mt-2"
+            />
+            <div className="flex justify-between text-[10px] text-gray-400 font-mono mt-1">
+              <span>1 MB</span>
+              <span>10 MB</span>
+              <span>20 MB</span>
+            </div>
+          </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* CARD 2: Scan Live Server (TLS Handshake) */}
-        {/* ========================================================================= */}
-        <div className="rounded-2xl bg-navy-850 border border-navy-750 p-6 shadow-xl space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-navy-750">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
-                <Globe className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-white">2. Scan Live Server</h2>
-                <p className="text-xs text-gray-400">Live TLS handshake inspection on authorized hosts</p>
-              </div>
-            </div>
-            <span className="text-xs font-mono px-2.5 py-1 rounded bg-navy-950 text-violet-300 border border-navy-800">
-              Live TLS
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2 space-y-1">
-                <label className="text-xs text-gray-300 font-medium">Hostname or IP Address</label>
-                <input
-                  type="text"
-                  value={hostname}
-                  onChange={(e) => { setHostname(e.target.value); setServerError(null); }}
-                  placeholder="e.g. scanme.nmap.org or example.com"
-                  className="w-full bg-navy-950 border border-navy-750 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 font-mono focus:border-violet-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-gray-300 font-medium">Port</label>
-                <input
-                  type="number"
-                  value={port}
-                  onChange={(e) => setPort(parseInt(e.target.value, 10) || 443)}
-                  className="w-full bg-navy-950 border border-navy-750 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:border-violet-500 focus:outline-none"
-                  placeholder="443"
-                />
-              </div>
-            </div>
-
-            {/* Authorisation Confirmation Checkbox */}
-            <div className="p-3.5 rounded-xl bg-navy-950/80 border border-navy-800 flex items-start space-x-3">
-              <input
-                id="auth-checkbox"
-                type="checkbox"
-                checked={authorized}
-                onChange={(e) => { setAuthorized(e.target.checked); setServerError(null); }}
-                className="mt-1 h-4 w-4 rounded border-navy-700 bg-navy-900 text-violet-500 focus:ring-violet-500 focus:ring-offset-navy-950"
-              />
-              <label htmlFor="auth-checkbox" className="text-xs text-gray-300 leading-relaxed cursor-pointer select-none">
-                I confirm that I own or have written authorization to perform non-destructive TLS inspection on this server.
-              </label>
-            </div>
-          </div>
-
-          {serverError && (
-            <div className="flex items-center space-x-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
-              <XCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{serverError}</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-[11px] text-gray-400 flex items-center space-x-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
-              <span>SSRF protected & passive handshake only</span>
-            </span>
-
-            <button
-              type="button"
-              disabled={serverScanning || !authorized || !hostname.trim()}
-              onClick={handleRunServerScan}
-              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-semibold text-xs tracking-wide transition shadow-lg shadow-violet-600/20"
-            >
-              {serverScanning ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Connecting & Inspecting...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Scan Server</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Results Display */}
-          {serverSuccess && (
-            <div className="mt-4 pt-4 border-t border-navy-750 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                  Handshake Diagnostics
-                </span>
-                <Link to="/findings" className="text-xs text-violet-400 hover:underline inline-flex items-center space-x-1">
-                  <span>View in Findings</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-
-              {/* Handshake Details Card */}
-              {tlsMetadata && (
-                <div className="rounded-xl bg-navy-950 p-4 border border-navy-800 space-y-2.5 text-xs font-mono">
-                  <div className="flex justify-between items-center pb-2 border-b border-navy-800">
-                    <span className="text-gray-400">Target:</span>
-                    <span className="text-white font-semibold">{hostname}:{port}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">TLS Protocol:</span>
-                    <span className="text-cyan-300 font-semibold">{tlsMetadata.tls_version || 'TLS 1.3 / 1.2'}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Cipher Suite:</span>
-                    <span className="text-amber-300 truncate max-w-[220px]" title={tlsMetadata.cipher_suite}>
-                      {tlsMetadata.cipher_suite || 'Standard Cipher Suite'}
-                    </span>
-                  </div>
-                  {tlsMetadata.cert_public_key_algorithm && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-400">Certificate Key:</span>
-                      <span className="text-rose-400 font-semibold">
-                        {tlsMetadata.cert_public_key_algorithm} ({tlsMetadata.cert_key_size || 2048} bits)
-                      </span>
-                    </div>
-                  )}
-                  {tlsMetadata.quantum_vulnerable && (
-                    <div className="pt-2 border-t border-navy-800 text-[11px] text-rose-300 font-sans leading-relaxed">
-                      ⚠️ <strong>Vulnerability:</strong> Classical key exchange & RSA/ECC certificates are susceptible to Harvest Now, Decrypt Later (HNDL). Migrate to NIST FIPS 203 (ML-KEM) hybrid key exchange.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {serverFindings.length > 0 && (
-                <div className="overflow-x-auto rounded-xl border border-navy-750">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-navy-950 text-gray-400 font-mono text-[11px] border-b border-navy-750">
-                      <tr>
-                        <th className="py-2.5 px-3">Algorithm</th>
-                        <th className="py-2.5 px-3">Evidence</th>
-                        <th className="py-2.5 px-3">Recommended PQC</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-navy-750/60 bg-navy-900/60 font-mono text-[11px]">
-                      {serverFindings.map((f, idx) => (
-                        <tr key={idx} className="hover:bg-navy-800/50">
-                          <td className="py-2.5 px-3 font-semibold text-rose-400">
-                            {f.algorithm}
-                          </td>
-                          <td className="py-2.5 px-3 text-gray-400 truncate max-w-[180px]" title={f.evidence}>
-                            {f.evidence}
-                          </td>
-                          <td className="py-2.5 px-3 text-cyan-300">
-                            {f.recommended_pqc}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Guidance Link Banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-navy-850 via-navy-800 to-navy-850 border border-navy-750 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center space-x-4">
-          <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-            <KeyRound className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold text-white">Understand NIST Post-Quantum Standards</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Learn how FIPS 203 (ML-KEM) replaces Diffie-Hellman and FIPS 204 (ML-DSA) replaces RSA/ECDSA signatures.
+        {/* Custom Path Input if selected */}
+        {scopeType === 'custom' && (
+          <div className="p-4 rounded-xl bg-navy-950 border border-navy-750 space-y-2">
+            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block">
+              Authorized Target Directory Path:
+            </label>
+            <input
+              type="text"
+              value={customPath}
+              onChange={(e) => setCustomPath(e.target.value)}
+              placeholder="e:\path\to\authorized\source"
+              className="w-full px-3 py-2 rounded-lg bg-navy-900 border border-navy-700 text-white font-mono text-xs focus:outline-none focus:border-cyan-400"
+            />
+            <p className="text-[11px] text-gray-400">
+              Only accessible directories within approved permissions will be scanned. Symlinks outside the target are skipped.
             </p>
           </div>
+        )}
+
+        {/* Advanced Config Toggle */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowAdvancedConfig(!showAdvancedConfig)}
+            className="inline-flex items-center space-x-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-medium transition"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>{showAdvancedConfig ? 'Hide Scope Guardrails' : 'View Scope Guardrails & File Extensions'}</span>
+            {showAdvancedConfig ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+
+          {showAdvancedConfig && scanConfig && (
+            <div className="mt-3 p-4 rounded-xl bg-navy-950 border border-navy-800 text-xs space-y-3 font-mono">
+              <div>
+                <span className="text-gray-400 block text-[11px]">Included Extensions:</span>
+                <span className="text-cyan-300">
+                  {scanConfig.supported_extensions?.join(', ')}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-400 block text-[11px]">Excluded Directories (by default):</span>
+                <span className="text-gray-300">
+                  {scanConfig.excluded_directories?.join(', ')}
+                </span>
+              </div>
+              <div className="text-[11px] text-emerald-400">
+                Guards: Read-only traversal, zero code execution, private key disclosure protection active.
+              </div>
+            </div>
+          )}
         </div>
-        <Link
-          to="/migration"
-          className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-navy-900 hover:bg-navy-750 border border-navy-700 text-cyan-300 text-xs font-medium transition"
+
+        {/* Error Display */}
+        {systemError && (
+          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start space-x-3 text-xs text-rose-300">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+            <span>{systemError}</span>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* LIVE SCAN TELEMETRY CARD */}
+        {/* ========================================================================= */}
+        {(systemScanning || activeJob || systemSuccess) && (
+          <div className="p-5 rounded-xl bg-navy-950 border border-cyan-500/30 space-y-4 animate-fade-in shadow-inner">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                {systemScanning ? (
+                  <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+                ) : systemSuccess ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-rose-400" />
+                )}
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                  Job {activeJob?.id || 'Running'}:{' '}
+                  <span
+                    className={
+                      systemScanning
+                        ? 'text-cyan-400'
+                        : systemSuccess
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }
+                  >
+                    {activeJob?.status || 'Active'}
+                  </span>
+                </span>
+              </div>
+
+              <span className="text-xs font-mono text-gray-400">
+                Progress: <strong className="text-white">{activeJob?.progress || 0}%</strong>
+              </span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="w-full h-2 rounded-full bg-navy-800 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  systemSuccess
+                    ? 'bg-emerald-400'
+                    : 'bg-gradient-to-r from-cyan-500 to-violet-500'
+                }`}
+                style={{ width: `${Math.max(5, activeJob?.progress || 0)}%` }}
+              />
+            </div>
+
+            {/* Telemetry Counter Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
+              <div className="p-3 rounded-lg bg-navy-900 border border-navy-800 text-center">
+                <span className="text-[10px] text-gray-400 block uppercase font-mono">Discovered</span>
+                <span className="text-lg font-bold text-white font-mono">{telemetry.files_discovered}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-navy-900 border border-navy-800 text-center">
+                <span className="text-[10px] text-gray-400 block uppercase font-mono">Scanned</span>
+                <span className="text-lg font-bold text-cyan-400 font-mono">{telemetry.files_scanned}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-navy-900 border border-navy-800 text-center">
+                <span className="text-[10px] text-gray-400 block uppercase font-mono">Skipped</span>
+                <span className="text-lg font-bold text-gray-300 font-mono">{telemetry.files_skipped}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-navy-900 border border-navy-800 text-center">
+                <span className="text-[10px] text-gray-400 block uppercase font-mono">Errors</span>
+                <span className={`text-lg font-bold font-mono ${telemetry.files_errored > 0 ? 'text-amber-400' : 'text-gray-400'}`}>
+                  {telemetry.files_errored}
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-navy-900 border border-navy-800 text-center">
+                <span className="text-[10px] text-gray-400 block uppercase font-mono">Findings</span>
+                <span className={`text-lg font-bold font-mono ${telemetry.findings_count > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {telemetry.findings_count}
+                </span>
+              </div>
+            </div>
+
+            {/* Post-Scan Fix First Banner */}
+            {systemSuccess && (
+              <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-cyan-950/80 via-navy-900 to-navy-950 border border-cyan-500/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2 text-cyan-300 font-semibold text-xs">
+                    <ShieldAlert className="w-4 h-4 text-cyan-400" />
+                    <span>System Scan Completed Successfully</span>
+                  </div>
+                  <p className="text-[11px] text-gray-300">
+                    Discovered {telemetry.findings_count} cryptographic findings prioritized by explainable risk score.
+                  </p>
+                </div>
+                <Link
+                  to="/findings"
+                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-navy-950 font-bold text-xs inline-flex items-center space-x-1.5 transition flex-shrink-0"
+                >
+                  <span>Open Prioritized Findings</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECONDARY / TARGETED PROBES (Collapsible) */}
+      {/* ========================================================================= */}
+      <div className="border border-navy-750/80 rounded-2xl bg-navy-950/50 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setManualSectionOpen(!manualSectionOpen)}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-navy-900/60 transition"
         >
-          <span>Open Migration Guide</span>
-          <ArrowRight className="w-4 h-4" />
-        </Link>
+          <div className="flex items-center space-x-3">
+            <SlidersHorizontal className="w-4 h-4 text-gray-400" />
+            <div>
+              <h3 className="text-sm font-semibold text-white">Targeted Probing & Manual Analysis</h3>
+              <p className="text-xs text-gray-400">Inspect single uploaded files, pasted code, or live TLS servers</p>
+            </div>
+          </div>
+          {manualSectionOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {manualSectionOpen && (
+          <div className="p-6 border-t border-navy-750/70 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* 1. Single File Upload / Paste */}
+            <div className="rounded-xl bg-navy-850 border border-navy-750 p-5 space-y-4">
+              <div className="flex items-center space-x-2.5 pb-2 border-b border-navy-750">
+                <FileCode className="w-5 h-5 text-cyan-400" />
+                <h4 className="text-sm font-semibold text-white">Inspect Single Code Snippet</h4>
+              </div>
+
+              <div className="flex rounded-lg bg-navy-950 p-1 border border-navy-800">
+                <button
+                  type="button"
+                  onClick={() => setSourceMode('upload')}
+                  className={`flex-1 py-1 px-3 text-xs font-medium rounded-md transition ${
+                    sourceMode === 'upload' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400'
+                  }`}
+                >
+                  File Upload
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceMode('paste')}
+                  className={`flex-1 py-1 px-3 text-xs font-medium rounded-md transition ${
+                    sourceMode === 'paste' ? 'bg-cyan-500/20 text-cyan-300' : 'text-gray-400'
+                  }`}
+                >
+                  Paste Code
+                </button>
+              </div>
+
+              {sourceMode === 'upload' ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-navy-750 hover:border-cyan-500/40 rounded-xl p-6 text-center cursor-pointer transition bg-navy-950/60"
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                  <span className="text-xs text-white block font-medium">
+                    {selectedFile ? selectedFile.name : 'Select code file to inspect'}
+                  </span>
+                </div>
+              ) : (
+                <textarea
+                  rows={4}
+                  value={sourceCodeText}
+                  onChange={(e) => setSourceCodeText(e.target.value)}
+                  placeholder="Paste Python, Java, or C/C++ code here..."
+                  className="w-full p-2.5 rounded-lg bg-navy-950 border border-navy-750 text-white font-mono text-xs focus:outline-none focus:border-cyan-400"
+                />
+              )}
+
+              {sourceError && <p className="text-xs text-rose-400">{sourceError}</p>}
+              {sourceSuccess && (
+                <p className="text-xs text-emerald-400">Scan complete: {sourceFindings.length} findings discovered.</p>
+              )}
+
+              <button
+                type="button"
+                disabled={sourceScanning}
+                onClick={handleRunSourceScan}
+                className="w-full py-2 rounded-lg bg-navy-900 hover:bg-navy-800 border border-navy-700 text-cyan-300 text-xs font-semibold transition"
+              >
+                {sourceScanning ? 'Scanning...' : 'Inspect Snippet'}
+              </button>
+            </div>
+
+            {/* 2. Live Server TLS Probing */}
+            <div className="rounded-xl bg-navy-850 border border-navy-750 p-5 space-y-4">
+              <div className="flex items-center space-x-2.5 pb-2 border-b border-navy-750">
+                <Globe className="w-5 h-5 text-violet-400" />
+                <h4 className="text-sm font-semibold text-white">Live Server TLS Handshake</h4>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="text-[11px] text-gray-400 block mb-1">Target Hostname:</label>
+                  <input
+                    type="text"
+                    value={hostname}
+                    onChange={(e) => setHostname(e.target.value)}
+                    placeholder="api.example.com"
+                    className="w-full px-3 py-1.5 rounded-lg bg-navy-950 border border-navy-750 text-white font-mono text-xs focus:outline-none focus:border-violet-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-gray-400 block mb-1">Port:</label>
+                  <input
+                    type="number"
+                    value={port}
+                    onChange={(e) => setPort(Number(e.target.value))}
+                    className="w-full px-3 py-1.5 rounded-lg bg-navy-950 border border-navy-750 text-white font-mono text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center space-x-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={authorized}
+                  onChange={(e) => setAuthorized(e.target.checked)}
+                  className="rounded border-navy-700 text-violet-500 focus:ring-0"
+                />
+                <span className="text-[11px] text-gray-300">I confirm explicit authorization to inspect this target.</span>
+              </label>
+
+              {serverError && <p className="text-xs text-rose-400">{serverError}</p>}
+              {serverSuccess && (
+                <p className="text-xs text-emerald-400">TLS scan complete: {serverFindings.length} findings discovered.</p>
+              )}
+
+              <button
+                type="button"
+                disabled={serverScanning}
+                onClick={handleRunServerScan}
+                className="w-full py-2 rounded-lg bg-navy-900 hover:bg-navy-800 border border-navy-700 text-violet-300 text-xs font-semibold transition"
+              >
+                {serverScanning ? 'Probing Handshake...' : 'Inspect TLS Server'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

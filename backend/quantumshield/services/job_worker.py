@@ -51,6 +51,7 @@ class BackgroundJobManager:
         self.register_handler("certificate_scan", self._handle_certificate_scan)
         self.register_handler("static_scan", self._handle_static_scan)
         self.register_handler("tls_scan", self._handle_tls_scan)
+        self.register_handler("system_scan", self._handle_system_scan)
 
     def register_handler(
         self, job_type: str, handler: Union[Callable[[ScanJob], Any], Callable[[ScanJob, Callable[[], bool]], Any]]
@@ -331,6 +332,16 @@ class BackgroundJobManager:
                         line_number=f_dict.get("line_number"),
                         confidence=f_dict.get("confidence", "high"),
                         remediation_status=f_dict.get("remediation_status", "potential_exposure"),
+                        detection_category=f_dict.get("detection_category", "Confirmed cryptographic API usage"),
+                        data_sensitivity=f_dict.get("data_sensitivity"),
+                        exposure=f_dict.get("exposure"),
+                        confidentiality_lifetime=f_dict.get("confidentiality_lifetime"),
+                        risk_score=f_dict.get("risk_score"),
+                        risk_category=f_dict.get("risk_category", "Needs Assessment"),
+                        score_rationale=f_dict.get("score_rationale", ""),
+                        recommended_action=f_dict.get("recommended_action", ""),
+                        migration_approach=f_dict.get("migration_approach", ""),
+                        queue_group=f_dict.get("queue_group", "needs_assessment"),
                     )
                     finding_repo.save_finding(finding)
 
@@ -420,6 +431,64 @@ class BackgroundJobManager:
             raise RuntimeError(result.error_message)
 
         job.progress = 90
+        self.repo.update(job)
+        return result.to_dict()
+
+    def _handle_system_scan(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Execute real automatic System File Scanner with live progress reporting."""
+        asset = None
+        if job.asset_id:
+            asset = self.asset_repo.get_by_id(job.asset_id)
+        
+        if not asset:
+            # Default / system project asset
+            asset = Asset(
+                id=job.asset_id or "system_files",
+                name="System Project Files",
+                asset_type="application",
+                environment="development",
+                description="Automatic system filesystem cryptographic discovery scope",
+                criticality="high",
+            )
+            # Try saving if doesn't exist
+            if not self.asset_repo.get_by_id(asset.id):
+                try:
+                    self.asset_repo.create(asset)
+                except Exception:
+                    pass
+
+        job.progress = 5
+        self.repo.update(job)
+
+        from quantumshield.scanner.system_file_scanner import SystemFileScanner
+        scanner = SystemFileScanner()
+        payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+
+        def progress_callback(telemetry: dict):
+            disc = telemetry.get("files_discovered", 0)
+            scanned = telemetry.get("files_scanned", 0)
+            pct = min(95, max(5, int((scanned / max(1, disc or 100)) * 90) + 5))
+            job.progress = pct
+            job.result_json = {"telemetry": telemetry}
+            try:
+                self.repo.update(job)
+            except Exception:
+                pass
+
+        result = scanner.scan(
+            asset=asset,
+            options=payload,
+            progress_callback=progress_callback,
+            is_cancelled=is_cancelled,
+        )
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True, "status": "cancelled"}
+
+        if result.status == "failed" and result.error_message:
+            raise RuntimeError(result.error_message)
+
+        job.progress = 100
         self.repo.update(job)
         return result.to_dict()
 

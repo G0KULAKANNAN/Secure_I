@@ -28,6 +28,7 @@ VALID_JOB_TYPES: Set[str] = {
     "certificate_scan",
     "tls_scan",
     "static_scan",
+    "system_scan",
     "full_orchestrated_scan",
     "change_detection",
 }
