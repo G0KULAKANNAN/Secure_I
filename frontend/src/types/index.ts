@@ -1,13 +1,30 @@
-export type Environment = 'development' | 'testing' | 'production';
+export type AssetType = 'server' | 'website' | 'application' | 'certificate' | 'database' | 'other';
+export type Environment = 'development' | 'testing' | 'staging' | 'production';
 export type Criticality = 'low' | 'medium' | 'high' | 'critical';
-export type FindingStatus =
-  | 'potential_exposure'
-  | 'verified_usage'
-  | 'needs_review'
-  | 'insufficient_evidence'
-  | 'remediated'
-  | 'accepted_risk';
-export type MigrationStatus = 'not_started' | 'assessment' | 'testing' | 'approved' | 'completed';
+export type AssetStatus = 'active' | 'inactive' | 'under_review';
+
+export interface Asset {
+  id: string;
+  name: string;
+  asset_type: AssetType;
+  environment: Environment;
+  hostname?: string | null;
+  ip_address?: string | null;
+  owner?: string | null;
+  description?: string | null;
+  criticality: Criticality;
+  status: AssetStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetListResponse {
+  status: string;
+  assets: Asset[];
+  total: number;
+  limit: number;
+  offset: number;
+}
 
 export interface HealthStatus {
   status: string;
@@ -24,21 +41,4 @@ export interface SystemVersion {
   version: string;
   api_version: string;
   disclaimer: string;
-}
-
-export interface Asset {
-  id: string;
-  name: string;
-  type: string;
-  owner: string;
-  environment: Environment;
-  data_sensitivity: number;
-  confidentiality_lifetime_years: number;
-  internet_exposure: boolean;
-  business_criticality: Criticality;
-  evidence_source: string;
-  scan_status: string;
-  remediation_status: string;
-  created_at: string;
-  updated_at: string;
 }

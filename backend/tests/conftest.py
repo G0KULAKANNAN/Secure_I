@@ -13,13 +13,27 @@ if str(BACKEND_DIR) not in sys.path:
 import pytest
 from app import create_app
 from config import TestingConfig
+from quantumshield.storage.database import init_db
 
 
 @pytest.fixture
-def app():
-    """Create test application instance."""
-    app_inst = create_app(config_object=TestingConfig)
+def app(tmp_path):
+    """Create test application instance with an isolated temporary SQLite database."""
+    test_db = tmp_path / "test_quantumshield.db"
+
+    class IsolatedTestingConfig(TestingConfig):
+        DATABASE_PATH = test_db
+
+    init_db(test_db)
+    app_inst = create_app(config_object=IsolatedTestingConfig)
     yield app_inst
+
+    # Cleanup test db
+    if test_db.exists():
+        try:
+            test_db.unlink()
+        except Exception:
+            pass
 
 
 @pytest.fixture

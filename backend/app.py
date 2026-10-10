@@ -15,7 +15,9 @@ from flask import Flask, jsonify
 from config import get_config
 from quantumshield.extensions import cors
 from quantumshield.core.exceptions import QuantumShieldError
-from quantumshield.api import health_bp
+from quantumshield.storage.database import init_db
+from quantumshield.api.health import health_bp
+from quantumshield.api.assets import assets_bp
 
 
 def create_app(config_object=None):
@@ -30,11 +32,17 @@ def create_app(config_object=None):
 
     app.config.from_object(config_object)
 
+    # Initialise SQLite Database
+    db_path = app.config.get("DATABASE_PATH")
+    if db_path:
+        init_db(db_path)
+
     # Initialize extensions
     cors.init_app(app, resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}})
 
     # Register Blueprints
     app.register_blueprint(health_bp)
+    app.register_blueprint(assets_bp)
 
     # Global Exception Handlers
     @app.errorhandler(QuantumShieldError)

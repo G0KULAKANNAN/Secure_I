@@ -35,7 +35,7 @@ export const Overview: React.FC = () => {
 
   const milestones = [
     { stage: 'Stage 1', name: 'Web App Foundation & UI/UX', status: 'Completed', icon: CheckCircle2, color: 'text-emerald-400' },
-    { stage: 'Stage 2', name: 'Asset Inventory & SQLite Persistence', status: 'Planned', icon: Clock, color: 'text-cyan-400' },
+    { stage: 'Stage 2', name: 'Asset Inventory & SQLite Persistence', status: 'Completed', icon: CheckCircle2, color: 'text-emerald-400' },
     { stage: 'Stage 3', name: 'X.509 Certificate Scanner', status: 'Planned', icon: Clock, color: 'text-cyan-400' },
     { stage: 'Stage 4', name: 'Source Code & Config Scanner', status: 'Planned', icon: Clock, color: 'text-cyan-400' },
     { stage: 'Stage 5', name: 'Authorised TLS Scanner', status: 'Planned', icon: Clock, color: 'text-cyan-400' },

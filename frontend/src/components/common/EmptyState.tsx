@@ -1,8 +1,8 @@
 import React from 'react';
-import { LucideIcon, FolderSearch } from 'lucide-react';
+import { FolderSearch } from 'lucide-react';
 
 interface EmptyStateProps {
-  icon?: LucideIcon;
+  icon?: React.ComponentType<{ className?: string }>;
   title: string;
   description: string;
   actionText?: string;
