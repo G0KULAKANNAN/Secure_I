@@ -11,6 +11,7 @@ const pageTitles: Record<string, string> = {
   '/migration': 'Post-Quantum Migration Guide',
   '/hybrid-lab': 'Hybrid Cryptography Lab',
   '/network-lab': 'Network Compatibility Lab',
+  '/rollout-center': 'Staged Rollout Management',
   '/assets': 'Asset Inventory',
   '/jobs': 'Job Processing Center',
   '/risk': 'Explainable Risk Assessment',

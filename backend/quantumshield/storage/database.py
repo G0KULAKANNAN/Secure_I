@@ -313,10 +313,173 @@ def init_db(db_path: Union[str, Path]) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_net_results_profile ON network_verification_results (profile_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_net_results_class ON network_verification_results (diagnostic_classification);")
 
+        # -------------------------------------------------------------
+        # Stage 4: Staged Production Rollout Management Tables
+        # -------------------------------------------------------------
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS deployment_environments (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                managed_service TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                current_config_json TEXT NOT NULL,
+                desired_config_json TEXT NOT NULL,
+                supported_tls_version TEXT NOT NULL DEFAULT 'TLS 1.3',
+                supported_groups_json TEXT NOT NULL,
+                client_compatibility_reqs TEXT,
+                readiness_status TEXT NOT NULL DEFAULT 'not_ready',
+                rollout_status TEXT NOT NULL DEFAULT 'idle',
+                rollback_config_ref TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CONSTRAINT chk_env_category CHECK (
+                    category IN ('development', 'local_lab', 'staging', 'production')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_deploy_env_cat ON deployment_environments (category);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rollout_plans (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                environment_id TEXT NOT NULL,
+                current_stage TEXT NOT NULL DEFAULT 'DRAFT',
+                state TEXT NOT NULL DEFAULT 'DRAFT',
+                canary_percentage INTEGER NOT NULL DEFAULT 5,
+                previous_config_json TEXT,
+                target_config_json TEXT NOT NULL,
+                readiness_assessment_json TEXT,
+                rollback_threshold_failure_rate REAL NOT NULL DEFAULT 2.0,
+                approved_by TEXT,
+                approved_at TEXT,
+                last_advanced_at TEXT,
+                deployment_mode TEXT NOT NULL DEFAULT 'simulation',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (environment_id) REFERENCES deployment_environments(id) ON DELETE CASCADE,
+                CONSTRAINT chk_rollout_state CHECK (
+                    state IN ('DRAFT', 'VALIDATING', 'READY_FOR_APPROVAL', 'APPROVED', 'CANARY', 'MONITORING', 'COMPLETED', 'BLOCKED', 'FAILED', 'ROLLBACK_PENDING', 'ROLLED_BACK', 'CANCELLED')
+                )
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rollout_plans_state ON rollout_plans (state);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_rollout_plans_env ON rollout_plans (environment_id);")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry_events (
+                id TEXT PRIMARY KEY,
+                rollout_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                handshake_success_rate REAL NOT NULL DEFAULT 100.0,
+                handshake_failure_rate REAL NOT NULL DEFAULT 0.0,
+                average_latency_ms REAL NOT NULL DEFAULT 15.0,
+                timeout_rate REAL NOT NULL DEFAULT 0.0,
+                negotiated_tls_version TEXT DEFAULT 'TLS 1.3',
+                negotiated_group TEXT DEFAULT 'X25519MLKEM768',
+                error_categories_json TEXT,
+                is_simulated INTEGER NOT NULL DEFAULT 1,
+                recorded_at TEXT NOT NULL,
+                FOREIGN KEY (rollout_id) REFERENCES rollout_plans(id) ON DELETE CASCADE
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_rollout ON telemetry_events (rollout_id);")
+
+        # Seed default environments for Stage 4
+        _seed_default_environments(conn)
+
         # Seed default crypto capabilities if empty
         _seed_default_capabilities(conn)
 
     conn.close()
+
+
+def _seed_default_environments(conn: sqlite3.Connection) -> None:
+    """Seed default deployment environments for Stage 4."""
+    cursor = conn.execute("SELECT COUNT(*) as count FROM deployment_environments;")
+    if cursor.fetchone()["count"] == 0:
+        import datetime
+        import json
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        seeds = [
+            (
+                "env_dev",
+                "Internal Development Cluster",
+                "development",
+                "Kube-Ingress-Dev",
+                "devops-team@company.internal",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "X25519"]}),
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "X25519"]}),
+                "TLS 1.3",
+                json.dumps(["X25519MLKEM768", "X25519"]),
+                "Developer workstations, internal CI/CD runners",
+                "ready",
+                "completed",
+                None,
+                now,
+                now,
+            ),
+            (
+                "env_local_lab",
+                "Local Cryptographic Testbed",
+                "local_lab",
+                "Envoy-Local",
+                "secops-research@company.internal",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "SecP256r1MLKEM768", "X25519"]}),
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "SecP256r1MLKEM768", "X25519"]}),
+                "TLS 1.3",
+                json.dumps(["X25519MLKEM768", "SecP256r1MLKEM768", "X25519"]),
+                "Local test harnesses, integration runners",
+                "ready",
+                "completed",
+                None,
+                now,
+                now,
+            ),
+            (
+                "env_staging",
+                "Staging Gateway",
+                "staging",
+                "Edge-Proxy-Staging",
+                "cloud-infra@company.internal",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "X25519"]}),
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "X25519"]}),
+                "TLS 1.3",
+                json.dumps(["X25519MLKEM768", "X25519"]),
+                "Chrome 124+, Firefox 128+, internal microservices",
+                "ready",
+                "ready",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519"]}),
+                now,
+                now,
+            ),
+            (
+                "env_production",
+                "Primary Edge API Gateway",
+                "production",
+                "Cloudflare / Envoy Hybrid",
+                "sre-core@company.internal",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519"]}),
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519MLKEM768", "X25519"]}),
+                "TLS 1.3",
+                json.dumps(["X25519"]),
+                "Global external clients, mobile SDKs, partner APIs",
+                "ready_for_canary",
+                "idle",
+                json.dumps({"tls_version": "TLS 1.3", "supported_groups": ["X25519"]}),
+                now,
+                now,
+            ),
+        ]
+        conn.executemany("""
+            INSERT INTO deployment_environments (
+                id, name, category, managed_service, owner, current_config_json,
+                desired_config_json, supported_tls_version, supported_groups_json,
+                client_compatibility_reqs, readiness_status, rollout_status,
+                rollback_config_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, seeds)
 
 
 def _seed_default_capabilities(conn: sqlite3.Connection) -> None:

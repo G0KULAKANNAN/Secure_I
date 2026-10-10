@@ -397,3 +397,116 @@ export interface NetworkResultListResponse {
   results: NetworkVerificationResult[];
   total: number;
 }
+
+// -------------------------------------------------------------
+// Stage 4: Staged Production Rollout Management Types
+// -------------------------------------------------------------
+
+export type DeploymentCategory = 'development' | 'local_lab' | 'staging' | 'production';
+
+export interface DeploymentEnvironment {
+  id: string;
+  name: string;
+  category: DeploymentCategory;
+  managed_service: string;
+  owner: string;
+  current_config: Record<string, any>;
+  desired_config: Record<string, any>;
+  supported_tls_version: string;
+  supported_groups: string[];
+  client_compatibility_reqs?: string | null;
+  readiness_status: 'not_ready' | 'ready_for_canary' | 'ready' | 'degraded';
+  rollout_status: 'idle' | 'in_progress' | 'completed' | 'rolled_back';
+  rollback_config_ref?: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RolloutState =
+  | 'DRAFT'
+  | 'VALIDATING'
+  | 'READY_FOR_APPROVAL'
+  | 'APPROVED'
+  | 'CANARY'
+  | 'MONITORING'
+  | 'COMPLETED'
+  | 'BLOCKED'
+  | 'FAILED'
+  | 'ROLLBACK_PENDING'
+  | 'ROLLED_BACK'
+  | 'CANCELLED';
+
+export interface ReadinessGate {
+  gate_id: string;
+  title: string;
+  status: 'PASS' | 'FAIL' | 'PENDING';
+  message: string;
+  recommendation?: string | null;
+}
+
+export interface ReadinessAssessment {
+  all_technical_passed: boolean;
+  overall_ready: boolean;
+  gates: ReadinessGate[];
+  blockers: string[];
+  evaluated_at: string;
+}
+
+export interface RolloutPlan {
+  id: string;
+  name: string;
+  environment_id: string;
+  current_stage: string;
+  state: RolloutState;
+  canary_percentage: number;
+  previous_config?: Record<string, any> | null;
+  target_config: Record<string, any>;
+  readiness_assessment?: ReadinessAssessment | null;
+  rollback_threshold_failure_rate: number;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  last_advanced_at?: string | null;
+  deployment_mode: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TelemetryEvent {
+  id: string;
+  rollout_id: string;
+  stage: string;
+  handshake_success_rate: number;
+  handshake_failure_rate: number;
+  average_latency_ms: number;
+  timeout_rate: number;
+  negotiated_tls_version: string;
+  negotiated_group: string;
+  error_categories?: Record<string, number> | null;
+  is_simulated: boolean;
+  recorded_at: string;
+}
+
+export interface EnvironmentListResponse {
+  status: string;
+  environments: DeploymentEnvironment[];
+  total: number;
+}
+
+export interface RolloutPlanListResponse {
+  status: string;
+  plans: RolloutPlan[];
+  total: number;
+}
+
+export interface RolloutPlanResponse {
+  status: string;
+  plan: RolloutPlan;
+  recent_telemetry?: TelemetryEvent[];
+}
+
+export interface TelemetryListResponse {
+  status: string;
+  telemetry: TelemetryEvent[];
+  total: number;
+}
+
