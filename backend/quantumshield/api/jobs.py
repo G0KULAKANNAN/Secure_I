@@ -1,12 +1,13 @@
 """
 Scan Job Management REST API Endpoints.
-Supports both /api/v1/jobs and /api/jobs route conventions.
+Milestone 1: Dual route support (/api/jobs and /api/v1/jobs), worker health status,
+cancellation, retry, and validation of job types and target assets.
 """
 
 from flask import Blueprint, request, jsonify, current_app
 from quantumshield.storage.job_repository import JobRepository
 from quantumshield.storage.repositories import AssetRepository
-from quantumshield.models.job import ScanJob
+from quantumshield.models.job import ScanJob, VALID_JOB_TYPES
 from quantumshield.core.exceptions import ValidationError, NotFoundError
 
 jobs_bp = Blueprint("jobs", __name__)
@@ -25,11 +26,49 @@ def get_asset_repo() -> AssetRepository:
 
 
 # -------------------------------------------------------------
+# GET /api/v1/worker/status & GET /api/worker/status
+# -------------------------------------------------------------
+@jobs_bp.route("/api/v1/worker/status", methods=["GET"])
+@jobs_bp.route("/api/worker/status", methods=["GET"])
+def get_worker_status():
+    """Return status and health metrics of the background job worker engine."""
+    job_manager = current_app.extensions.get("job_manager")
+    if job_manager:
+        worker_info = job_manager.get_status()
+    else:
+        # Fallback query from repository when workers run out-of-process
+        repo = get_job_repo()
+        _, pending_count = repo.list_jobs(status="pending", limit=1)
+        _, queued_count = repo.list_jobs(status="queued", limit=1)
+        _, running_count = repo.list_jobs(status="running", limit=1)
+        _, total = repo.list_jobs(limit=1)
+
+        worker_info = {
+            "engine": "QuantumShield Background Job Worker",
+            "status": "idle",
+            "uptime_seconds": 0.0,
+            "max_workers": 3,
+            "active_workers": running_count,
+            "queue_depth": pending_count + queued_count,
+            "processed_count": total,
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "retried_count": 0,
+        }
+
+    return jsonify({
+        "status": "ok",
+        "worker": worker_info,
+    }), 200
+
+
+# -------------------------------------------------------------
 # GET /api/v1/jobs & GET /api/jobs - List Scan Jobs
 # -------------------------------------------------------------
 @jobs_bp.route("/api/v1/jobs", methods=["GET"])
 @jobs_bp.route("/api/jobs", methods=["GET"])
 def list_jobs():
+    """List jobs with filtering and pagination."""
     repo = get_job_repo()
     asset_id = request.args.get("asset_id")
     status = request.args.get("status")
@@ -64,6 +103,7 @@ def list_jobs():
 @jobs_bp.route("/api/v1/jobs/<job_id>", methods=["GET"])
 @jobs_bp.route("/api/jobs/<job_id>", methods=["GET"])
 def get_job(job_id: str):
+    """Retrieve detailed state and execution data for a single job."""
     repo = get_job_repo()
     job = repo.get_by_id(job_id)
     if not job:
@@ -81,21 +121,41 @@ def get_job(job_id: str):
 @jobs_bp.route("/api/v1/jobs", methods=["POST"])
 @jobs_bp.route("/api/jobs", methods=["POST"])
 def create_job():
+    """
+    Enqueue a new job for persistent background processing.
+    Validates job type, optional target asset existence, and priority.
+    """
     data = request.get_json(silent=True)
     if not data or not isinstance(data, dict):
         raise ValidationError("Invalid JSON payload provided.")
 
+    job_type = data.get("job_type")
+    if not job_type:
+        raise ValidationError("Field 'job_type' is required.")
+
+    if job_type.lower() not in VALID_JOB_TYPES:
+        raise ValidationError(
+            f"Invalid job_type '{job_type}'. Must be one of: {', '.join(sorted(VALID_JOB_TYPES))}"
+        )
+
     asset_id = data.get("asset_id")
-    if not asset_id:
-        raise ValidationError("Field 'asset_id' is required.")
+    if asset_id:
+        asset_id = str(asset_id).strip()
+        asset_repo = get_asset_repo()
+        asset = asset_repo.get_by_id(asset_id)
+        if not asset:
+            raise NotFoundError(f"Target asset '{asset_id}' does not exist.")
+    else:
+        # Check if asset is mandatory for specific types
+        if job_type.lower() == "asset_validation":
+            raise ValidationError("Field 'asset_id' is required for asset_validation job.")
+        asset_id = None
 
-    # Verify asset exists in database
-    asset_repo = get_asset_repo()
-    asset = asset_repo.get_by_id(asset_id)
-    if not asset:
-        raise NotFoundError(f"Target asset '{asset_id}' does not exist.")
-
-    job = ScanJob.from_dict(data)
+    job = ScanJob.from_dict({
+        **data,
+        "asset_id": asset_id,
+        "status": "queued",
+    })
     job.validate()
 
     job_manager = current_app.extensions.get("job_manager")
@@ -119,20 +179,23 @@ def create_job():
 @jobs_bp.route("/api/v1/jobs/<job_id>/cancel", methods=["POST"])
 @jobs_bp.route("/api/jobs/<job_id>/cancel", methods=["POST"])
 def cancel_job(job_id: str):
+    """
+    Request cancellation of a job.
+    Pending/queued jobs cancel immediately; running jobs trigger cooperative cancel.
+    """
     repo = get_job_repo()
     job = repo.get_by_id(job_id)
     if not job:
         raise NotFoundError(f"Job with ID '{job_id}' not found.")
 
-    cancelled = repo.cancel(job_id)
+    cancelled = repo.request_cancellation(job_id)
     if not cancelled:
         raise ValidationError(f"Job '{job_id}' cannot be cancelled in its current state ({job.status}).")
 
-    updated = repo.get_by_id(job_id)
     return jsonify({
         "status": "ok",
-        "message": f"Job '{job_id}' has been cancelled.",
-        "job": updated.to_dict() if updated else None,
+        "message": f"Cancellation requested for job '{job_id}'.",
+        "job": cancelled.to_dict(),
     }), 200
 
 
@@ -142,15 +205,23 @@ def cancel_job(job_id: str):
 @jobs_bp.route("/api/v1/jobs/<job_id>/retry", methods=["POST"])
 @jobs_bp.route("/api/jobs/<job_id>/retry", methods=["POST"])
 def retry_job(job_id: str):
+    """
+    Retry a failed or cancelled job with exponential backoff.
+    """
     repo = get_job_repo()
     job = repo.get_by_id(job_id)
     if not job:
         raise NotFoundError(f"Job with ID '{job_id}' not found.")
 
+    if job.attempt_count >= job.max_attempts:
+        raise ValidationError(
+            f"Job '{job_id}' cannot be retried. Maximum retries ({job.max_attempts}) reached."
+        )
+
     retried = repo.retry(job_id)
     if not retried:
         raise ValidationError(
-            f"Job '{job_id}' cannot be retried. Maximum retries ({job.max_retries}) reached or invalid state."
+            f"Job '{job_id}' cannot be retried from its current state ({job.status})."
         )
 
     # Wake background worker if active

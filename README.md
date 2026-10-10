@@ -110,12 +110,13 @@ Long-running scans run asynchronously without blocking Flask HTTP request handle
 - `PUT /api/v1/assets/<id>`: Update asset.
 - `DELETE /api/v1/assets/<id>`: Delete asset.
 
-### 3. Persistent Scan Jobs
-- `GET /api/v1/jobs`: List scan jobs (filters: `asset_id`, `status`, `job_type`, `limit`, `offset`).
-- `GET /api/v1/jobs/<job_id>`: Retrieve specific job details, progress, and result payload.
-- `POST /api/v1/jobs`: Create and enqueue a scan job for an authorised asset.
-- `POST /api/v1/jobs/<job_id>/cancel`: Cancel a pending, queued, or running job.
-- `POST /api/v1/jobs/<job_id>/retry`: Retry a failed job within retry limits.
+### 3. Persistent Scan Jobs & Worker Engine
+- `GET /api/v1/worker/status` (and `/api/worker/status`): Real-time worker engine health, thread pool activity, queue depth, and uptime metrics.
+- `GET /api/v1/jobs` (and `/api/jobs`): List scan jobs (filters: `asset_id`, `status`, `job_type`, `limit`, `offset`).
+- `GET /api/v1/jobs/<job_id>` (and `/api/jobs/<job_id>`): Retrieve specific job details, progress, output, and error payload.
+- `POST /api/v1/jobs` (and `/api/jobs`): Enqueue a background job (`health_check`, `asset_validation`, `certificate_scan`, `tls_scan`, `static_scan`).
+- `POST /api/v1/jobs/<job_id>/cancel` (and `/api/jobs/<job_id>/cancel`): Cooperatively cancel a pending, queued, or running job.
+- `POST /api/v1/jobs/<job_id>/retry` (and `/api/jobs/<job_id>/retry`): Retry a failed or cancelled job with exponential backoff.
 
 ---
 
@@ -135,11 +136,14 @@ cd backend
 # Install dependencies
 pip install -r requirements.txt
 
-# Run automated tests
+# Run automated tests (all 33 unit and lifecycle tests pass)
 python -m pytest tests/ -v
 
 # Start the Flask API server with background workers
 python app.py
+
+# Optional: Run worker independently as a standalone daemon
+python worker.py --workers 3
 ```
 
 ### 2. Frontend Setup

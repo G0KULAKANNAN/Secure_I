@@ -33,9 +33,12 @@ export type JobStatus =
   | 'completed'
   | 'partially_completed'
   | 'failed'
+  | 'cancel_requested'
   | 'cancelled';
 
 export type JobType =
+  | 'health_check'
+  | 'asset_validation'
   | 'certificate_scan'
   | 'tls_scan'
   | 'static_scan'
@@ -44,18 +47,28 @@ export type JobType =
 
 export interface ScanJob {
   id: string;
-  job_type: JobType;
-  asset_id: string;
+  job_type: JobType | string;
+  asset_id?: string | null;
   operation: string;
   status: JobStatus;
+  priority: number;
+  payload_json?: any;
+  result_json?: any;
+  progress: number;
+  attempt_count: number;
+  max_attempts: number;
   created_at: string;
   started_at?: string | null;
-  completed_at?: string | null;
-  progress: number;
-  retry_count: number;
-  max_retries: number;
+  finished_at?: string | null;
+  updated_at: string;
+  next_retry_at?: string | null;
+  error_code?: string | null;
   error_message?: string | null;
-  result_data?: Record<string, any> | string | null;
+  // Backward compatibility fields
+  retry_count?: number;
+  max_retries?: number;
+  completed_at?: string | null;
+  result_data?: any;
 }
 
 export interface JobListResponse {
@@ -64,6 +77,24 @@ export interface JobListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface WorkerStatus {
+  engine: string;
+  status: string;
+  uptime_seconds: number;
+  max_workers: number;
+  active_workers: number;
+  queue_depth: number;
+  processed_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  retried_count: number;
+}
+
+export interface WorkerStatusResponse {
+  status: string;
+  worker: WorkerStatus;
 }
 
 export interface HealthStatus {

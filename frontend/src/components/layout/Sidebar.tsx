@@ -4,6 +4,7 @@ import {
   ShieldAlert,
   LayoutDashboard,
   Server,
+  Cpu,
   Radar,
   FileSearch,
   AlertTriangle,
@@ -22,6 +23,7 @@ interface SidebarProps {
 const navItems = [
   { name: 'Overview', path: '/', icon: LayoutDashboard },
   { name: 'Asset Inventory', path: '/assets', icon: Server },
+  { name: 'Job Center', path: '/jobs', icon: Cpu },
   { name: 'Scanner', path: '/scanner', icon: Radar },
   { name: 'Findings', path: '/findings', icon: FileSearch },
   { name: 'Risk Assessment', path: '/risk', icon: AlertTriangle },

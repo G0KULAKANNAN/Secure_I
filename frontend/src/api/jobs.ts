@@ -76,3 +76,14 @@ export async function retryJob(jobId: string): Promise<ScanJob> {
   const result = await response.json();
   return result.job;
 }
+
+export async function getWorkerStatus(): Promise<import('../types').WorkerStatus> {
+  const response = await fetch(`${API_BASE_URL}/worker/status`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Failed to fetch worker status (HTTP ${response.status})`);
+  }
+  const result = await response.json();
+  return result.worker;
+}
+

@@ -9,6 +9,7 @@ import { RiskAssessment } from './pages/RiskAssessment';
 import { Migration } from './pages/Migration';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { JobCenter } from './pages/JobCenter';
 
 export const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Overview />} />
           <Route path="assets" element={<Assets />} />
+          <Route path="jobs" element={<JobCenter />} />
           <Route path="scanner" element={<Scanner />} />
           <Route path="findings" element={<Findings />} />
           <Route path="risk" element={<RiskAssessment />} />

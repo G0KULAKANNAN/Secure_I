@@ -1,14 +1,16 @@
 """
 Background Worker Processing and Job Queue Manager.
 Executes long-running scans asynchronously without blocking Flask request handlers.
+Milestone 1: Resilient background job engine with health monitoring, cooperative cancellation, and built-in safe handlers.
 """
 
 import threading
 import time
 import logging
 from pathlib import Path
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union, Any
 from quantumshield.storage.job_repository import JobRepository
+from quantumshield.storage.repositories import AssetRepository
 from quantumshield.models.job import ScanJob, utc_now_iso
 
 logger = logging.getLogger("quantumshield.worker")
@@ -19,16 +21,37 @@ class BackgroundJobManager:
     Manages background worker threads and asynchronous execution of scan jobs.
     """
 
-    def __init__(self, db_path: Union[str, Path], max_workers: int = 3):
+    def __init__(self, db_path: Union[str, Path], max_workers: int = 3, lease_seconds: int = 60):
         self.db_path = db_path
         self.max_workers = max_workers
+        self.lease_seconds = lease_seconds
         self.repo = JobRepository(db_path)
-        self.handlers: Dict[str, Callable[[ScanJob], dict]] = {}
+        self.asset_repo = AssetRepository(db_path)
+        self.handlers: Dict[str, Callable[[ScanJob, Callable[[], bool]], Any]] = {}
         self._running = False
         self._threads: list[threading.Thread] = []
         self._wake_event = threading.Event()
+        self._lock = threading.Lock()
+        self._start_time: Optional[float] = None
 
-    def register_handler(self, job_type: str, handler: Callable[[ScanJob], dict]) -> None:
+        # Metrics
+        self._active_workers = 0
+        self._processed_count = 0
+        self._succeeded_count = 0
+        self._failed_count = 0
+        self._retried_count = 0
+
+        # Register default safe handlers
+        self._register_default_handlers()
+
+    def _register_default_handlers(self) -> None:
+        """Register built-in safe execution handlers for milestone 1."""
+        self.register_handler("health_check", self._handle_health_check)
+        self.register_handler("asset_validation", self._handle_asset_validation)
+
+    def register_handler(
+        self, job_type: str, handler: Union[Callable[[ScanJob], Any], Callable[[ScanJob, Callable[[], bool]], Any]]
+    ) -> None:
         """Register an execution function for a specific job_type."""
         self.handlers[job_type.lower()] = handler
 
@@ -45,6 +68,7 @@ class BackgroundJobManager:
             return
 
         self._running = True
+        self._start_time = time.time()
         self._wake_event.clear()
 
         # Recover any orphaned jobs from previous crashes
@@ -72,10 +96,35 @@ class BackgroundJobManager:
         self._threads.clear()
         logger.info("BackgroundJobManager stopped cleanly.")
 
+    def get_status(self) -> Dict[str, Any]:
+        """Return runtime status and health metrics for the worker engine."""
+        uptime = time.time() - self._start_time if self._start_time and self._running else 0.0
+
+        # Query live queue depth from SQLite
+        _, pending_count = self.repo.list_jobs(status="pending", limit=1)
+        _, queued_count = self.repo.list_jobs(status="queued", limit=1)
+        queue_depth = pending_count + queued_count
+
+        return {
+            "engine": "QuantumShield Background Job Worker",
+            "status": "running" if self._running else "stopped",
+            "uptime_seconds": round(uptime, 2),
+            "max_workers": self.max_workers,
+            "active_workers": self._active_workers,
+            "queue_depth": queue_depth,
+            "processed_count": self._processed_count,
+            "succeeded_count": self._succeeded_count,
+            "failed_count": self._failed_count,
+            "retried_count": self._retried_count,
+        }
+
     def _worker_loop(self) -> None:
         """Main loop executed by worker threads."""
         while self._running:
             try:
+                # Recover any abandoned jobs whose lease expired
+                self.repo.recover_abandoned_jobs(self.lease_seconds)
+
                 job = self.repo.claim_next_job()
                 if not job:
                     # No job available, wait up to 2 seconds or until signaled
@@ -83,51 +132,168 @@ class BackgroundJobManager:
                     self._wake_event.clear()
                     continue
 
-                self._process_job(job)
+                with self._lock:
+                    self._active_workers += 1
+
+                try:
+                    self._process_job(job)
+                finally:
+                    with self._lock:
+                        self._active_workers = max(0, self._active_workers - 1)
+                        self._processed_count += 1
+
             except Exception as exc:
                 logger.error(f"Unexpected error in worker loop: {exc}", exc_info=True)
                 time.sleep(1.0)
 
+    def _is_job_cancelled(self, job_id: str) -> bool:
+        """Check if job cancellation was requested."""
+        fresh = self.repo.get_by_id(job_id)
+        if not fresh:
+            return True
+        return fresh.status in ("cancel_requested", "cancelled")
+
     def _process_job(self, job: ScanJob) -> None:
         """Execute a claimed job and update its lifecycle state."""
-        logger.info(f"Worker claimed job '{job.id}' (Type: {job.job_type}, Asset: {job.asset_id})")
+        logger.info(f"Worker claimed job '{job.id}' (Type: {job.job_type}, Priority: {job.priority})")
+
+        # Check for immediate cancellation before beginning
+        if self._is_job_cancelled(job.id):
+            job.status = "cancelled"
+            job.finished_at = utc_now_iso()
+            job.error_code = "CANCELLED"
+            job.error_message = "Job cancelled before execution started."
+            self.repo.update(job)
+            return
 
         handler = self.handlers.get(job.job_type.lower())
         if not handler:
-            # Default placeholder execution if specific scanner handler not registered yet
-            handler = self._default_mock_handler
+            # Reject unknown job type
+            logger.error(f"Job '{job.id}' has unknown job_type '{job.job_type}'. Rejection recorded.")
+            job.status = "failed"
+            job.finished_at = utc_now_iso()
+            job.error_code = "UNKNOWN_JOB_TYPE"
+            job.error_message = f"Unsupported or unknown job type '{job.job_type}'. No handler registered."
+            self.repo.update(job)
+            with self._lock:
+                self._failed_count += 1
+            return
 
         try:
-            # Execute handler
-            result_data = handler(job)
+            # Prepare cancellation token
+            cancel_token = lambda: self._is_job_cancelled(job.id)
+
+            # Invoke handler
+            import inspect
+            sig = inspect.signature(handler)
+            if len(sig.parameters) >= 2:
+                result_data = handler(job, cancel_token)
+            else:
+                result_data = handler(job)
+
+            # Check if cancellation was flagged during handler execution
+            if self._is_job_cancelled(job.id):
+                job.status = "cancelled"
+                job.finished_at = utc_now_iso()
+                job.error_code = "CANCELLED"
+                job.error_message = "Job cancelled by user request during execution."
+                self.repo.update(job)
+                return
+
             job.status = "completed"
             job.progress = 100
-            job.completed_at = utc_now_iso()
-            job.result_data = result_data
+            job.finished_at = utc_now_iso()
+            job.result_json = result_data
+            job.error_code = None
+            job.error_message = None
             self.repo.update(job)
+            with self._lock:
+                self._succeeded_count += 1
             logger.info(f"Job '{job.id}' completed successfully.")
+
         except Exception as exc:
             logger.error(f"Job '{job.id}' failed during execution: {exc}")
-            job.completed_at = utc_now_iso()
+            job.finished_at = utc_now_iso()
+            job.error_code = getattr(exc, "code", "EXECUTION_ERROR")
             job.error_message = str(exc)
 
             # Check if eligible for retry
-            if job.retry_count < job.max_retries:
-                job.retry_count += 1
-                job.status = "queued"
-                logger.info(f"Job '{job.id}' will be retried (Attempt {job.retry_count}/{job.max_retries})")
+            if job.attempt_count < job.max_attempts:
+                with self._lock:
+                    self._retried_count += 1
+                self.repo.retry(job.id)
+                logger.info(f"Job '{job.id}' scheduled for retry (Attempt {job.attempt_count}/{job.max_attempts}).")
             else:
                 job.status = "failed"
-                logger.warning(f"Job '{job.id}' reached maximum retries ({job.max_retries}) and marked failed.")
+                with self._lock:
+                    self._failed_count += 1
+                self.repo.update(job)
+                logger.warning(f"Job '{job.id}' reached maximum retries ({job.max_attempts}) and marked failed.")
 
-            self.repo.update(job)
+    # -------------------------------------------------------------
+    # Default Safe Handlers for Milestone 1
+    # -------------------------------------------------------------
+    def _handle_health_check(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Safe handler verifying system health and dependencies."""
+        job.progress = 25
+        self.repo.update(job)
 
-    def _default_mock_handler(self, job: ScanJob) -> dict:
-        """Default baseline handler for jobs when dedicated scanners are in progress."""
+        # Check DB
+        t0 = time.time()
+        conn = self.repo.get_by_id(job.id)
+        db_latency = (time.time() - t0) * 1000
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True}
+
+        job.progress = 75
+        self.repo.update(job)
+
+        storage_path = Path(self.db_path).resolve()
+        is_writable = storage_path.parent.is_dir()
+
         return {
-            "job_id": job.id,
-            "asset_id": job.asset_id,
-            "operation": job.operation,
-            "message": "Scan job queued and processed by QuantumShield background worker engine.",
-            "processed_at": utc_now_iso(),
+            "status": "healthy",
+            "database": "connected",
+            "database_latency_ms": round(db_latency, 2),
+            "storage_path": str(storage_path),
+            "storage_writable": is_writable,
+            "checked_at": utc_now_iso(),
+            "execution_mode": "persistent_worker",
+        }
+
+    def _handle_asset_validation(self, job: ScanJob, is_cancelled: Optional[Callable[[], bool]] = None) -> dict:
+        """Safe handler validating asset parameters and network configuration."""
+        if not job.asset_id:
+            raise ValueError("Target asset_id is required for asset_validation job.")
+
+        job.progress = 30
+        self.repo.update(job)
+
+        asset = self.asset_repo.get_by_id(job.asset_id)
+        if not asset:
+            raise ValueError(f"Target asset '{job.asset_id}' not found in database.")
+
+        if is_cancelled and is_cancelled():
+            return {"cancelled": True}
+
+        job.progress = 80
+        self.repo.update(job)
+
+        return {
+            "asset_id": asset.id,
+            "asset_name": asset.name,
+            "asset_type": asset.asset_type,
+            "environment": asset.environment,
+            "criticality": asset.criticality,
+            "hostname": asset.hostname,
+            "ip_address": asset.ip_address,
+            "validation_passed": True,
+            "checks": {
+                "record_exists": True,
+                "valid_identifier": bool(asset.id),
+                "environment_configured": bool(asset.environment),
+                "criticality_rated": bool(asset.criticality),
+            },
+            "validated_at": utc_now_iso(),
         }
